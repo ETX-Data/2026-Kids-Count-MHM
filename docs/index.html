@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Texas Kids Count Data Dashboard | Every Texan</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 h-screen flex flex-col overflow-hidden">
+
+  <!-- Top Navigation & Filter Header -->
+  <header class="bg-white border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-4 z-10 shadow-sm">
+    <div>
+      <span class="text-xs font-bold uppercase tracking-wider text-teal-700">Every Texan • 2026 Kids Count</span>
+      <h1 class="text-lg font-bold text-slate-800">Texas Child Well-Being Interactive Map</h1>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <!-- Geography Switcher -->
+      <div>
+        <label class="block text-[11px] font-semibold uppercase text-slate-500 mb-0.5">Geography</label>
+        <select id="geoSelect" class="border border-slate-300 rounded-md px-3 py-1.5 text-sm font-medium bg-white focus:outline-none focus:ring-2 focus:ring-teal-600">
+          <option value="counties">Texas Counties (254)</option>
+          <option value="house">TX House Districts (150)</option>
+          <option value="senate">TX Senate Districts (31)</option>
+          <option value="schools">Unified School Districts</option>
+        </select>
+      </div>
+
+      <!-- Indicator Switcher (Populated Dynamically from indicators.json) -->
+      <div>
+        <label class="block text-[11px] font-semibold uppercase text-slate-500 mb-0.5">Indicator</label>
+        <select id="indicatorSelect" class="border border-slate-300 rounded-md px-3 py-1.5 text-sm font-medium bg-white focus:outline-none focus:ring-2 focus:ring-teal-600 min-w-[280px]">
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace: Map + Right Scorecard Sidebar -->
+  <div class="flex-1 flex overflow-hidden relative">
+    
+    <!-- Map Container -->
+    <div id="map" class="flex-1 h-full relative">
+      <!-- Floating Legend -->
+      <div id="legend" class="absolute bottom-6 left-6 bg-white/95 backdrop-blur border border-slate-200 rounded-lg p-3.5 shadow-md z-10 max-w-xs">
+        <div id="legendTitle" class="text-xs font-bold text-slate-700 mb-2"></div>
+        <div id="legendBar" class="flex h-3 rounded overflow-hidden mb-1"></div>
+        <div id="legendLabels" class="flex justify-between text-[11px] text-slate-600 font-medium"></div>
+        <div id="legendSource" class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100"></div>
+      </div>
+    </div>
+
+    <!-- Right Sidebar Scorecard -->
+    <aside class="w-96 bg-white border-l border-slate-200 h-full overflow-y-auto p-6 shadow-lg z-10">
+      <div id="sidebarEmpty" class="text-sm text-slate-500 py-12 text-center">
+        Click any county, legislative district, or school district on the map to inspect its full child well-being profile.
+      </div>
+
+      <div id="sidebarContent" class="hidden space-y-6">
+        <div class="border-b border-slate-200 pb-4">
+          <span id="profileGeoType" class="text-xs font-semibold uppercase tracking-wider text-teal-700"></span>
+          <h2 id="profileName" class="text-xl font-bold text-slate-900 mt-0.5"></h2>
+          <p class="text-xs text-slate-500 mt-1">
+            Total Child Population (Under 18): <strong id="profileTotalKids" class="text-slate-800"></strong>
+            (<span id="profilePctKids"></span>% of total pop)
+          </p>
+        </div>
+
+        <!-- Highlighted Active Indicator Card -->
+        <div class="bg-teal-50/70 border border-teal-200 rounded-lg p-4">
+          <div id="activeIndLabel" class="text-xs font-semibold text-teal-900 uppercase"></div>
+          <div class="flex items-baseline gap-2 mt-1">
+            <span id="activeIndPct" class="text-3xl font-extrabold text-teal-800"></span>
+            <span id="activeIndCount" class="text-xs text-teal-700"></span>
+          </div>
+        </div>
+
+        <!-- Race/Ethnicity Breakdown -->
+        <div>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">Child Race & Ethnicity (Under 18)</h3>
+          <div id="raceBreakdown" class="space-y-2 text-xs"></div>
+        </div>
+
+        <!-- Core Well-Being Scorecard Table -->
+        <div>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">All Core Indicators</h3>
+          <div id="allIndicatorsList" class="divide-y divide-slate-100 text-xs"></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    let map, indicators = [], currentGeo = 'counties', currentInd = null, selectedFeature = null;
+    const fmtInt = (n) => (n !== null && n !== undefined && !isNaN(n)) ? Number(n).toLocaleString() : 'N/A';
+    const fmtPct = (n) => (n !== null && n !== undefined && !isNaN(n)) ? `${Number(n).toFixed(1)}%` : 'N/A';
+
+    async function initDashboard() {
+      const res = await fetch('./config/indicators.json');
+      indicators = await res.json();
+      currentInd = indicators[0];
+
+      // Populate grouped indicator dropdown
+      const select = document.getElementById('indicatorSelect');
+      const categories = [...new Set(indicators.map(i => i.category))];
+      categories.forEach(cat => {
+        const group = document.createElement('optgroup');
+        group.label = cat;
+        indicators.filter(i => i.category === cat).forEach(ind => {
+          const opt = document.createElement('option');
+          opt.value = ind.id;
+          opt.textContent = ind.label;
+          group.appendChild(opt);
+        });
+        select.appendChild(group);
+      });
+
+      // Initialize Free MapLibre Map with CARTO Positron Basemap
+      map = new maplibregl.Map({
+        container: 'map',
+        style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+        center: [-99.3, 31.2],
+        zoom: 5.3
+      });
+      map.addControl(new maplibregl.NavigationControl(), 'top-left');
+
+      map.on('load', () => {
+        loadGeoLayer(currentGeo);
+      });
+
+      document.getElementById('geoSelect').addEventListener('change', (e) => {
+        currentGeo = e.target.value;
+        selectedFeature = null;
+        document.getElementById('sidebarEmpty').classList.remove('hidden');
+        document.getElementById('sidebarContent').classList.add('hidden');
+        loadGeoLayer(currentGeo);
+      });
+
+      select.addEventListener('change', (e) => {
+        currentInd = indicators.find(i => i.id === e.target.value);
+        updateChoropleth();
+        if (selectedFeature) renderSidebar(selectedFeature);
+      });
+    }
+
+    function buildColorExpression(ind) {
+      const expr = ['step', ['coalesce', ['to-number', ['get', ind.id]], 0], ind.colors[0]];
+      ind.stops.forEach((stop, idx) => {
+        expr.push(stop, ind.colors[idx + 1]);
+      });
+      return expr;
+    }
+
+    function loadGeoLayer(geoSlug) {
+      const url = `./data/${geoSlug}.geojson`;
+      if (map.getLayer('poly-fill')) map.removeLayer('poly-fill');
+      if (map.getLayer('poly-line')) map.removeLayer('poly-line');
+      if (map.getSource('kids-geo')) map.removeSource('kids-geo');
+
+      map.addSource('kids-geo', { type: 'geojson', data: url });
+
+      map.addLayer({
+        id: 'poly-fill',
+        type: 'fill',
+        source: 'kids-geo',
+        paint: {
+          'fill-color': buildColorExpression(currentInd),
+          'fill-opacity': 0.78
+        }
+      });
+
+      map.addLayer({
+        id: 'poly-line',
+        type: 'line',
+        source: 'kids-geo',
+        paint: {
+          'line-color': '#334155',
+          'line-width': geoSlug === 'schools' ? 0.4 : 0.8
+        }
+      });
+
+      map.on('click', 'poly-fill', (e) => {
+        if (e.features.length > 0) {
+          selectedFeature = e.features[0].properties;
+          renderSidebar(selectedFeature);
+        }
+      });
+
+      map.on('mouseenter', 'poly-fill', () => map.getCanvas().style.cursor = 'pointer');
+      map.on('mouseleave', 'poly-fill', () => map.getCanvas().style.cursor = '');
+
+      updateLegend();
+    }
+
+    function updateChoropleth() {
+      if (map.getLayer('poly-fill')) {
+        map.setPaintProperty('poly-fill', 'fill-color', buildColorExpression(currentInd));
+      }
+      updateLegend();
+    }
+
+    function updateLegend() {
+      document.getElementById('legendTitle').textContent = currentInd.label;
+      document.getElementById('legendSource').textContent = `Source: ${currentInd.source}`;
+      document.getElementById('legendBar').innerHTML = currentInd.colors
+        .map(c => `<div class="flex-1" style="background:${c}"></div>`).join('');
+      document.getElementById('legendLabels').innerHTML = 
+        `<span><${currentInd.stops[0]}%</span>` +
+        currentInd.stops.map(s => `<span>${s}%</span>`).join('');
+    }
+
+    function renderSidebar(props) {
+      document.getElementById('sidebarEmpty').classList.add('hidden');
+      document.getElementById('sidebarContent').classList.remove('hidden');
+
+      document.getElementById('profileGeoType').textContent = document.getElementById('geoSelect').selectedOptions[0].text;
+      document.getElementById('profileName').textContent = props.NAME;
+      document.getElementById('profileTotalKids').textContent = fmtInt(props.kids_u18);
+      document.getElementById('profilePctKids').textContent = props.pct_u18;
+
+      document.getElementById('activeIndLabel').textContent = currentInd.label;
+      document.getElementById('activeIndPct').textContent = fmtPct(props[currentInd.id]);
+      document.getElementById('activeIndCount').textContent = currentInd.count_id ? `(${fmtInt(props[currentInd.count_id])} children)` : '';
+
+      const races = [
+        { label: 'Hispanic or Latino', pct: props.pct_Hispu18 },
+        { label: 'White (Non-Hispanic)', pct: props.pct_whiteNHu18 },
+        { label: 'Black or African American', pct: props.pct_blacku18 },
+        { label: 'Asian', pct: props.pct_asianu18 },
+        { label: 'Two or More Races', pct: props.pct_two_moreu18 },
+        { label: 'AIAN, NHPI, or Other Race', pct: props.pct_otheru18 }
+      ];
+      document.getElementById('raceBreakdown').innerHTML = races.map(r => `
+        <div>
+          <div class="flex justify-between mb-0.5">
+            <span class="text-slate-600">${r.label}</span>
+            <span class="font-semibold text-slate-800">${fmtPct(r.pct)}</span>
+          </div>
+          <div class="w-full bg-slate-100 h-1.5 rounded overflow-hidden">
+            <div class="bg-teal-600 h-full" style="width:${Math.min(100, r.pct || 0)}%"></div>
+          </div>
+        </div>
+      `).join('');
+
+      document.getElementById('allIndicatorsList').innerHTML = indicators.map(ind => `
+        <div class="py-2 flex justify-between items-center">
+          <span class="text-slate-600 pr-2">${ind.label}</span>
+          <span class="font-bold text-slate-900">${fmtPct(props[ind.id])}</span>
+        </div>
+      `).join('');
+    }
+
+    initDashboard();
+  </script>
+</body>
+</html>
