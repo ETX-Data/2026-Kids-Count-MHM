@@ -51,8 +51,9 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       kids_u5       = "S0101_C01_002", # Children under 5 (New!)
       dis_total     = "C18130_003",   # Children with disabilities
       pov_u18       = "S1701_C02_002", # Children below 100% FPL
-      ownocc_u18    = "S0901_C01_036", # Children in owner-occupied homes
-      rent_u18      = "S0901_C01_037", # Children in rented homes
+      occ_u18       = "S0901_C01_035", # Children in occupied housing units (tenure universe)
+      ownocc_pct    = "S0901_C01_036", # PERCENT of children in owner-occupied homes (S0901 reports %, not a count)
+      rent_pct      = "S0901_C01_037", # PERCENT of children in rented homes (S0901 reports %, not a count)
       FB_boys       = "B05003_005",   # Foreign-born boys
       FB_girls      = "B05003_016",   # Foreign-born girls
       noHcov_u19    = "B27010_017",   # Under 19, uninsured
@@ -61,7 +62,12 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       tot_hh_kids   = "B22002_002",   # Total HHs with children under 18
       u18_comp_tot  = "B28005_002",   # Total under 18 (computer universe)
       u18_no_net    = "B28005_006",   # Under 18 with computer but no internet
-      u18_no_comp   = "B28005_007"    # Under 18 with no computer (New!)
+      u18_no_comp   = "B28005_007",   # Under 18 with no computer (New!)
+      kids_5to17    = "B16004_002",   # Total children 5-17 (language universe)
+      lep_5to17     = "B16003_002",   # Children 5-17 in limited English speaking households
+      hh_kids_tot   = "B09005_001",   # Children under 18 in households (household type universe)
+      hh_male_only  = "B09005_004",   # Children in male householder, no spouse/partner households
+      hh_fem_only   = "B09005_005"    # Children in female householder, no spouse/partner households
     ),
     geometry = TRUE,
     output   = "wide"
@@ -73,8 +79,11 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       kids_u5      = kids_u5E,
       dis_total    = dis_totalE,
       pov_u18      = pov_u18E,
-      ownocc_u18   = ownocc_u18E,
-      rent_u18     = rent_u18E,
+      # Derive child counts from the S0901 percentages
+      ownocc_u18   = round(ownocc_pctE / 100 * occ_u18E),
+      rent_u18     = round(rent_pctE / 100 * occ_u18E),
+      pct_ownocc   = ownocc_pctE,
+      pct_rent     = rent_pctE,
       FB_u18       = FB_boysE + FB_girlsE,
       noHcov_u19   = noHcov_u19E,
       total_u19    = total_u19E,
@@ -83,6 +92,11 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       u18_no_comp  = u18_no_compE,
       u18_no_net   = u18_no_netE + u18_no_compE,
       u18_comp_tot = u18_comp_totE,
+      kids_5to17   = kids_5to17E,
+      lep_5to17    = lep_5to17E,
+      hh_kids_tot  = hh_kids_totE,
+      # Single-parent = male or female householder with no spouse/partner present (excludes cohabiting couples)
+      single_par_u18 = hh_male_onlyE + hh_fem_onlyE,
       geometry
     ) %>%
     left_join(race_df, by = c("GEOID", "NAME")) %>%
@@ -90,8 +104,6 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       pct_u18         = round((kids_u18 / totpop) * 100, 1),
       pct_u5          = round((kids_u5 / kids_u18) * 100, 1),
       pct_dis         = round((dis_total / kids_u18) * 100, 1),
-      pct_ownocc      = round((ownocc_u18 / kids_u18) * 100, 1),
-      pct_rent        = round((rent_u18 / kids_u18) * 100, 1),
       pct_blacku18    = round((black_u18 / kids_u18) * 100, 1),
       pct_otheru18    = round(((AIAN_u18 + NHPI_u18 + other_u18) / kids_u18) * 100, 1),
       pct_asianu18    = round((asian_u18 / kids_u18) * 100, 1),
@@ -103,7 +115,9 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       pct_noHcov      = round((noHcov_u19 / total_u19) * 100, 1),
       pct_snap_hh     = round((snap_hh_kids / tot_hh_kids) * 100, 1),
       pct_no_comp     = round((u18_no_comp / u18_comp_tot) * 100, 1),
-      pct_no_net      = round((u18_no_net / u18_comp_tot) * 100, 1)
+      pct_no_net      = round((u18_no_net / u18_comp_tot) * 100, 1),
+      pct_lep_5to17   = round((lep_5to17 / kids_5to17) * 100, 1),
+      pct_single_par  = round((single_par_u18 / hh_kids_tot) * 100, 1)
     ) %>%
     st_transform(4326) # Standard WGS84 for MapLibre web maps
 

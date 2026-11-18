@@ -45,6 +45,33 @@
     "colors": ["#f2f0f7", "#dadaeb", "#bcbddc", "#9e9ac8", "#756bb1", "#54278f"]
   },
   {
+    "id": "pct_lep_5to17",
+    "count_id": "lep_5to17",
+    "label": "Children (5-17) in Limited English Speaking Households",
+    "category": "Demographics",
+    "source": "U.S. Census Bureau ACS 5-Year Estimates (Tables B16003, B16004)",
+    "stops": [2, 4, 7, 10, 15],
+    "colors": ["#edf8e9", "#c7e9c0", "#a1d99b", "#74c476", "#31a354", "#006d2c"]
+  },
+  {
+    "id": "pct_FB_u18",
+    "count_id": "FB_u18",
+    "label": "Foreign-Born Children",
+    "category": "Demographics",
+    "source": "U.S. Census Bureau ACS 5-Year Estimates (Tables B05003, S0101)",
+    "stops": [1, 2, 4, 6, 10],
+    "colors": ["#edf8e9", "#c7e9c0", "#a1d99b", "#74c476", "#31a354", "#006d2c"]
+  },
+  {
+    "id": "pct_single_par",
+    "count_id": "single_par_u18",
+    "label": "Children in Single-Parent Households",
+    "category": "Demographics",
+    "source": "U.S. Census Bureau ACS 5-Year Estimates (Table B09005)",
+    "stops": [15, 20, 25, 30, 35],
+    "colors": ["#edf8e9", "#c7e9c0", "#a1d99b", "#74c476", "#31a354", "#006d2c"]
+  },
+  {
     "id": "pct_no_net",
     "count_id": "u18_no_net",
     "label": "Children Without Home Internet Access",
