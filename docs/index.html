@@ -90,6 +90,10 @@
         <div id="legendTitle" class="text-xs font-bold text-slate-800 mb-2"></div>
         <div id="legendBar" class="flex h-3 rounded overflow-hidden mb-1 ring-1 ring-black/10"></div>
         <div id="legendLabels" class="flex justify-between text-[11px] text-slate-700 font-medium"></div>
+        <div class="flex items-center gap-1.5 mt-2 text-[11px] text-slate-700">
+          <span id="legendUnreliableSwatch" class="inline-block w-3 h-3 rounded-sm ring-1 ring-black/10 shrink-0"></span>
+          <span id="legendUnreliableLabel"></span>
+        </div>
         <div id="legendSource" class="text-[10px] text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]"></div>
       </div>
     </div>
@@ -107,7 +111,7 @@
             <h2 id="profileName" class="text-xl font-bold text-slate-900 mt-0.5"></h2>
             <p class="text-xs text-slate-700 mt-1">
               Total Child Population (Under 18): <strong id="profileTotalKids" class="text-slate-900"></strong>
-              (<span id="profilePctKids"></span>% of total population)
+              (<span id="profilePctKids"></span>%<span id="profilePctKidsMoe"></span> of total population)
             </p>
           </div>
           <!-- Print / Save PDF Button -->
@@ -122,9 +126,11 @@
           <div id="activeIndLabel" class="text-xs font-semibold text-teal-900 uppercase"></div>
           <div class="flex items-baseline gap-2 mt-1">
             <span id="activeIndPct" class="text-3xl font-extrabold text-teal-800"></span>
+            <span id="activeIndMoe" class="text-sm font-semibold text-teal-700"></span>
             <span id="activeIndCount" class="text-xs text-teal-700"></span>
           </div>
-          <p id="activeIndDef" class="text-[10px] leading-snug text-slate-600 mt-1.5"></p>
+          <p id="activeIndRel" class="hidden text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-300 rounded px-2 py-1 mt-2"></p>
+          <p id="activeIndDef"class="text-[10px] leading-snug text-slate-600 mt-1.5"></p>
         </div>
 
         <!-- Race/Ethnicity Breakdown -->
@@ -141,6 +147,10 @@
         <div>
           <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2.5">All Core Indicators</h3>
           <div id="allIndicatorsList" class="divide-y divide-[#E5D7C3] text-xs"></div>
+          <p class="text-[10px] text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]">
+            Note: &plusmn; values are 90% margins of error, in percentage points. They are published by the Census Bureau where available; otherwise they are calculated from published counts using Census Bureau formulas.
+            Unreliable estimates are not shown and appear gray on the map: their coefficient of variation (CV, the standard error divided by the estimate) is above 40%, or the estimate is 0% with a nonzero margin of error. This is common in small counties and school districts.
+          </p>
         </div>
       </div>
     </aside>
@@ -150,10 +160,37 @@
     let map, indicators = [], currentGeo = 'counties', currentInd = null, selectedFeature = null, currentGeoJSON = null;
     const fmtInt = (n) => (n !== null && n !== undefined && !isNaN(n)) ? Number(n).toLocaleString() : 'N/A';
     const fmtPct = (n) => (n !== null && n !== undefined && !isNaN(n)) ? `${Number(n).toFixed(1)}%` : 'N/A';
+    // 90% margin of error stored as "<indicator id>_moe" (percentage points); blank when unavailable
+    const fmtMoe = (props, id) => {
+      const m = props[`${id}_moe`];
+      return (m !== null && m !== undefined && m !== '' && !isNaN(m) && !isNaN(props[id])) ? `± ${Number(m).toFixed(1)}` : '';
+    };
+
+    // Reliability flag. CV = standard error / estimate, where standard error = MOE / 1.645 (Census Bureau definition).
+    // Estimates with a CV above 40% are suppressed and grayed out. 40% is Esri's cutoff for "low reliability"
+    // ACS estimates (ArcGIS Living Atlas / Business Analyst: high <= 12%, medium 12-40%, low > 40%). A 30% cutoff
+    // (National KIDS COUNT rule of thumb, PRB KIDS COUNT Data Resource Guide, Jan. 2025, p. 35) hid too many
+    // counties to be useful. A 0% estimate with a nonzero MOE has no finite CV, so it is also suppressed.
+    const CV_UNRELIABLE = 40;
+    const UNRELIABLE_COLOR = '#a3a3a3'; // neutral gray with no blue tint, distinct from every indicator palette
+    const toNum = (n) => (n === null || n === undefined || n === '' || isNaN(n)) ? null : Number(n);
+    function reliability(props, id) {
+      const est = toNum(props[id]);
+      const moe = toNum(props[`${id}_moe`]);
+      if (est === null) return { status: 'missing' };
+      if (moe === null || moe === 0) return { status: 'reliable', cv: 0 };
+      if (est === 0) return { status: 'unreliable', cv: null };
+      const cv = (moe / 1.645) / est * 100;
+      return { status: cv > CV_UNRELIABLE ? 'unreliable' : 'reliable', cv };
+    }
+    // Unreliable estimates are suppressed: no value, margin of error, or count is shown
+    const SUPPRESSED_NOTE = 'Not shown: estimate is unreliable';
 
     async function initDashboard() {
       const res = await fetch('./config/indicators.json');
       indicators = await res.json();
+      // Map shown on first load; dropdown categories follow their order in indicators.json
+      currentInd = indicators.find(i => i.id === 'pct_pov') || indicators[0];
 
       const select = document.getElementById('indicatorSelect');
       populateIndicatorSelect();
@@ -228,12 +265,20 @@
       if (currentInd) select.value = currentInd.id;
     }
 
+    // Choropleth color, with missing and unreliable estimates (same rule as reliability() above) shown in gray
     function buildColorExpression(ind) {
-      const expr = ['step', ['coalesce', ['to-number', ['get', ind.id]], 0], ind.colors[0]];
+      const est = ['to-number', ['get', ind.id]];
+      const moe = ['coalesce', ['to-number', ['get', `${ind.id}_moe`]], 0];
+      const step = ['step', est, ind.colors[0]];
       ind.stops.forEach((stop, idx) => {
-        expr.push(stop, ind.colors[idx + 1]);
+        step.push(stop, ind.colors[idx + 1]);
       });
-      return expr;
+      return ['case',
+        ['==', ['get', ind.id], null], UNRELIABLE_COLOR,
+        ['all', ['==', est, 0], ['>', moe, 0]], UNRELIABLE_COLOR,
+        ['all', ['>', est, 0], ['>', ['/', ['/', moe, 1.645], est], CV_UNRELIABLE / 100]], UNRELIABLE_COLOR,
+        step
+      ];
     }
 
     async function loadGeoLayer(geoSlug) {
@@ -340,6 +385,8 @@
       document.getElementById('legendLabels').innerHTML = 
         `<span><${currentInd.stops[0]}%</span>` +
         currentInd.stops.map(s => `<span>${s}%</span>`).join('');
+      document.getElementById('legendUnreliableSwatch').style.background = UNRELIABLE_COLOR;
+      document.getElementById('legendUnreliableLabel').textContent = `Unreliable (CV > ${CV_UNRELIABLE}%) or no data`;
     }
 
     function renderSidebar(props) {
@@ -350,10 +397,16 @@
       document.getElementById('profileName').textContent = props.NAME;
       document.getElementById('profileTotalKids').textContent = fmtInt(props.kids_u18);
       document.getElementById('profilePctKids').textContent = props.pct_u18;
+      const kidsMoe = fmtMoe(props, 'pct_u18');
+      document.getElementById('profilePctKidsMoe').textContent = kidsMoe ? ` ${kidsMoe}` : '';
 
       document.getElementById('activeIndLabel').textContent = currentInd.label;
-      document.getElementById('activeIndPct').textContent = fmtPct(props[currentInd.id]);
-      document.getElementById('activeIndCount').textContent = currentInd.count_id ? `(${fmtInt(props[currentInd.count_id])} children)` : '';
+      const activeUnreliable = reliability(props, currentInd.id).status === 'unreliable';
+      document.getElementById('activeIndPct').textContent = activeUnreliable ? '—' : fmtPct(props[currentInd.id]);
+      document.getElementById('activeIndMoe').textContent = activeUnreliable ? '' : fmtMoe(props, currentInd.id);
+      document.getElementById('activeIndRel').textContent = activeUnreliable ? SUPPRESSED_NOTE : '';
+      document.getElementById('activeIndRel').classList.toggle('hidden', !activeUnreliable);
+      document.getElementById('activeIndCount').textContent = (currentInd.count_id && !activeUnreliable) ? `(${fmtInt(props[currentInd.count_id])} children)` : '';
       document.getElementById('activeIndDef').textContent = currentInd.definition || '';
 
       const races = [
@@ -376,15 +429,22 @@
         </div>
       `).join('');
 
-      document.getElementById('allIndicatorsList').innerHTML = availableIndicators().map(ind => `
+      document.getElementById('allIndicatorsList').innerHTML = availableIndicators().map(ind => {
+        const unreliable = reliability(props, ind.id).status === 'unreliable';
+        const value = unreliable
+          ? `<span class="text-[10px] font-semibold text-slate-500">${SUPPRESSED_NOTE}</span>`
+          : `<span class="font-bold text-slate-900">${fmtPct(props[ind.id])}</span>
+             <span class="text-[10px] text-slate-500 ml-0.5">${fmtMoe(props, ind.id)}</span>`;
+        return `
         <div class="py-2">
           <div class="flex justify-between items-center">
             <span class="text-slate-700 pr-2">${ind.label}</span>
-            <span class="font-bold text-slate-900">${fmtPct(props[ind.id])}</span>
+            <span class="whitespace-nowrap">${value}</span>
           </div>
           ${ind.definition ? `<p class="text-[10px] leading-snug text-slate-500 mt-0.5 pr-10">${ind.definition}</p>` : ''}
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
     initDashboard();
