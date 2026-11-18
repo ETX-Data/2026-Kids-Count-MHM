@@ -149,22 +149,9 @@
     async function initDashboard() {
       const res = await fetch('./config/indicators.json');
       indicators = await res.json();
-      currentInd = indicators[0];
 
-      // Populate grouped indicator dropdown
       const select = document.getElementById('indicatorSelect');
-      const categories = [...new Set(indicators.map(i => i.category))];
-      categories.forEach(cat => {
-        const group = document.createElement('optgroup');
-        group.label = cat;
-        indicators.filter(i => i.category === cat).forEach(ind => {
-          const opt = document.createElement('option');
-          opt.value = ind.id;
-          opt.textContent = ind.label;
-          group.appendChild(opt);
-        });
-        select.appendChild(group);
-      });
+      populateIndicatorSelect();
 
       // Initialize Free MapLibre Map with unmodified CARTO Positron Basemap
       map = new maplibregl.Map({
@@ -185,6 +172,7 @@
         document.getElementById('searchInput').value = '';
         document.getElementById('sidebarEmpty').classList.remove('hidden');
         document.getElementById('sidebarContent').classList.add('hidden');
+        populateIndicatorSelect();
         loadGeoLayer(currentGeo);
       });
 
@@ -205,6 +193,34 @@
           selectAndZoomToFeature(match);
         }
       });
+    }
+
+    // Indicators available for a geography: omitting "geographies" in indicators.json means all layers
+    function availableIndicators(geo = currentGeo) {
+      return indicators.filter(i => !Array.isArray(i.geographies) || i.geographies.includes(geo));
+    }
+
+    // (Re)build the grouped indicator dropdown for the current geography,
+    // keeping the current indicator selected when it is still available
+    function populateIndicatorSelect() {
+      const select = document.getElementById('indicatorSelect');
+      const available = availableIndicators();
+      if (!currentInd || !available.includes(currentInd)) currentInd = available[0];
+
+      select.innerHTML = '';
+      const categories = [...new Set(available.map(i => i.category))];
+      categories.forEach(cat => {
+        const group = document.createElement('optgroup');
+        group.label = cat;
+        available.filter(i => i.category === cat).forEach(ind => {
+          const opt = document.createElement('option');
+          opt.value = ind.id;
+          opt.textContent = ind.label;
+          group.appendChild(opt);
+        });
+        select.appendChild(group);
+      });
+      if (currentInd) select.value = currentInd.id;
     }
 
     function buildColorExpression(ind) {
@@ -354,7 +370,7 @@
         </div>
       `).join('');
 
-      document.getElementById('allIndicatorsList').innerHTML = indicators.map(ind => `
+      document.getElementById('allIndicatorsList').innerHTML = availableIndicators().map(ind => `
         <div class="py-2 flex justify-between items-center">
           <span class="text-slate-700 pr-2">${ind.label}</span>
           <span class="font-bold text-slate-900">${fmtPct(props[ind.id])}</span>
