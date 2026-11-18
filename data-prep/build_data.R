@@ -11,6 +11,9 @@ acs1_year <- 2025
 acs5_year <- 2024 # Change to 2025 once it is released
 
 # 1. Helper for Under-18 Race/Ethnicity (B01001B-I)
+# NOTE: B01001B-G are race ALONE regardless of ethnicity (they include Hispanic children of that race),
+# while B01001H is White alone, non-Hispanic and B01001I is Hispanic/Latino of any race.
+# The resulting shares overlap and can sum to more than 100%. A note in docs/index.html explains this to users.
 race_tables <- c("B", "C", "D", "E", "F", "G", "H", "I")
 u18_cells   <- c("003", "004", "005", "006", "018", "019", "020", "021")
 race_vars_u18 <- as.vector(outer(race_tables, u18_cells, function(t, c) paste0("B01001", t, "_", c)))
@@ -68,9 +71,9 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       u18_no_comp   = "B28005_007",   # Under 18 with no computer (New!)
       kids_5to17    = "B16004_002",   # Total children 5-17 (language universe)
       lep_5to17     = "B16003_002",   # Children 5-17 in limited English speaking households
-      hh_kids_tot   = "B09005_001",   # Children under 18 in households (household type universe)
-      hh_male_only  = "B09005_004",   # Children in male householder, no spouse/partner households
-      hh_fem_only   = "B09005_005"    # Children in female householder, no spouse/partner households
+      own_kids_tot  = "B09002_001",   # Own children under 18 in families (family type universe)
+      own_male_only = "B09002_009",   # Own children in male householder, no spouse present families
+      own_fem_only  = "B09002_015"    # Own children in female householder, no spouse present families
     ),
     geometry = TRUE,
     output   = "wide"
@@ -99,9 +102,10 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       u18_comp_tot = u18_comp_totE,
       kids_5to17   = kids_5to17E,
       lep_5to17    = lep_5to17E,
-      hh_kids_tot  = hh_kids_totE,
-      # Single-parent = male or female householder with no spouse/partner present (excludes cohabiting couples)
-      single_par_u18 = hh_male_onlyE + hh_fem_onlyE,
+      own_kids_tot = own_kids_totE,
+      # Single-parent = own children (biological, adopted, step) of a householder with no spouse present.
+      # Matches the national KIDS COUNT definition: an unmarried partner may be present.
+      single_par_u18 = own_male_onlyE + own_fem_onlyE,
       geometry
     ) %>%
     left_join(race_df, by = c("GEOID", "NAME")) %>%
@@ -122,7 +126,7 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       pct_no_comp     = round((u18_no_comp / u18_comp_tot) * 100, 1),
       pct_no_net      = round((u18_no_net / u18_comp_tot) * 100, 1),
       pct_lep_5to17   = round((lep_5to17 / kids_5to17) * 100, 1),
-      pct_single_par  = round((single_par_u18 / hh_kids_tot) * 100, 1)
+      pct_single_par  = round((single_par_u18 / own_kids_tot) * 100, 1)
     ) %>%
     st_transform(4326) # Standard WGS84 for MapLibre web maps
 

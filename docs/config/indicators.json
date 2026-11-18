@@ -67,7 +67,7 @@
     "count_id": "single_par_u18",
     "label": "Children in Single-Parent Households",
     "category": "Demographics",
-    "source": "U.S. Census Bureau ACS 5-Year Estimates (Table B09005)",
+    "source": "U.S. Census Bureau ACS 5-Year Estimates (Table B09002)",
     "stops": [15, 20, 25, 30, 35],
     "colors": ["#edf8e9", "#c7e9c0", "#a1d99b", "#74c476", "#31a354", "#006d2c"]
   },
