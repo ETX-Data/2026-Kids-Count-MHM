@@ -124,6 +124,7 @@
             <span id="activeIndPct" class="text-3xl font-extrabold text-teal-800"></span>
             <span id="activeIndCount" class="text-xs text-teal-700"></span>
           </div>
+          <p id="activeIndDef" class="text-[10px] leading-snug text-slate-600 mt-1.5"></p>
         </div>
 
         <!-- Race/Ethnicity Breakdown -->
@@ -353,6 +354,7 @@
       document.getElementById('activeIndLabel').textContent = currentInd.label;
       document.getElementById('activeIndPct').textContent = fmtPct(props[currentInd.id]);
       document.getElementById('activeIndCount').textContent = currentInd.count_id ? `(${fmtInt(props[currentInd.count_id])} children)` : '';
+      document.getElementById('activeIndDef').textContent = currentInd.definition || '';
 
       const races = [
         { label: 'Hispanic or Latino', pct: props.pct_Hispu18 },
@@ -375,9 +377,12 @@
       `).join('');
 
       document.getElementById('allIndicatorsList').innerHTML = availableIndicators().map(ind => `
-        <div class="py-2 flex justify-between items-center">
-          <span class="text-slate-700 pr-2">${ind.label}</span>
-          <span class="font-bold text-slate-900">${fmtPct(props[ind.id])}</span>
+        <div class="py-2">
+          <div class="flex justify-between items-center">
+            <span class="text-slate-700 pr-2">${ind.label}</span>
+            <span class="font-bold text-slate-900">${fmtPct(props[ind.id])}</span>
+          </div>
+          ${ind.definition ? `<p class="text-[10px] leading-snug text-slate-500 mt-0.5 pr-10">${ind.definition}</p>` : ''}
         </div>
       `).join('');
     }
