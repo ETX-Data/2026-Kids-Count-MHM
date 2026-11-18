@@ -18,23 +18,41 @@ race_tables <- c("B", "C", "D", "E", "F", "G", "H", "I")
 u18_cells   <- c("003", "004", "005", "006", "018", "019", "020", "021")
 race_vars_u18 <- as.vector(outer(race_tables, u18_cells, function(t, c) paste0("B01001", t, "_", c)))
 
+# For each group, returns the under-18 count (<group>_u18) and the 90% MOE of that count (<group>_u18_moe),
+# combining the 8 age-by-sex cells (and, for "other_all", three race tables) with moe_add() (defined below).
+# "other_all" = AIAN + NHPI + Some Other Race, the combined group shown in the sidebar.
+race_groups <- list(black = "B", AIAN = "C", asian = "D", NHPI = "E", other = "F",
+                    two_more = "G", whiteNH = "H", hisp = "I", other_all = c("C", "E", "F"))
+
+# Requested one race table at a time (8 variables each), with retries: one 64-variable request
+# often times out on the Census API (Cloudflare error 524)
+get_acs_retry <- function(..., tries = 3) {
+  for (i in seq_len(tries)) {
+    res <- tryCatch(get_acs(...), error = function(e) e)
+    if (!inherits(res, "error")) return(res)
+    message("  Census API request failed (attempt ", i, " of ", tries, "): ", conditionMessage(res))
+    if (i < tries) Sys.sleep(30)
+  }
+  stop(res)
+}
+
 get_race_eth_u18 <- function(geography, survey, year) {
-  get_acs(
-    survey = survey, state = "TX", year = year,
-    geography = geography, variables = race_vars_u18,
-    geometry = FALSE, output = "wide"
-  ) %>%
-    mutate(
-      black_u18    = B01001B_003E + B01001B_004E + B01001B_005E + B01001B_006E + B01001B_018E + B01001B_019E + B01001B_020E + B01001B_021E,
-      AIAN_u18     = B01001C_003E + B01001C_004E + B01001C_005E + B01001C_006E + B01001C_018E + B01001C_019E + B01001C_020E + B01001C_021E,
-      asian_u18    = B01001D_003E + B01001D_004E + B01001D_005E + B01001D_006E + B01001D_018E + B01001D_019E + B01001D_020E + B01001D_021E,
-      NHPI_u18     = B01001E_003E + B01001E_004E + B01001E_005E + B01001E_006E + B01001E_018E + B01001E_019E + B01001E_020E + B01001E_021E,
-      other_u18    = B01001F_003E + B01001F_004E + B01001F_005E + B01001F_006E + B01001F_018E + B01001F_019E + B01001F_020E + B01001F_021E,
-      two_more_u18 = B01001G_003E + B01001G_004E + B01001G_005E + B01001G_006E + B01001G_018E + B01001G_019E + B01001G_020E + B01001G_021E,
-      whiteNH_u18  = B01001H_003E + B01001H_004E + B01001H_005E + B01001H_006E + B01001H_018E + B01001H_019E + B01001H_020E + B01001H_021E,
-      hisp_u18     = B01001I_003E + B01001I_004E + B01001I_005E + B01001I_006E + B01001I_018E + B01001I_019E + B01001I_020E + B01001I_021E
-    ) %>%
-    select(GEOID, NAME, ends_with("_u18"))
+  df <- race_tables %>%
+    map(function(t) get_acs_retry(
+      survey = survey, state = "TX", year = year,
+      geography = geography, variables = paste0("B01001", t, "_", u18_cells),
+      geometry = FALSE, output = "wide"
+    )) %>%
+    reduce(left_join, by = c("GEOID", "NAME"))
+  out <- df[, c("GEOID", "NAME")]
+  for (g in names(race_groups)) {
+    cells <- as.vector(outer(race_groups[[g]], u18_cells, function(t, c) paste0("B01001", t, "_", c)))
+    ests  <- lapply(cells, function(v) df[[paste0(v, "E")]])
+    moes  <- lapply(cells, function(v) df[[paste0(v, "M")]])
+    out[[paste0(g, "_u18")]]     <- Reduce(`+`, ests)
+    out[[paste0(g, "_u18_moe")]] <- moe_add(ests, moes)
+  }
+  out
 }
 
 # 2. Margin-of-error helpers (90% confidence, like all ACS MOEs)
@@ -100,6 +118,9 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       totpop        = "B01003_001",   # Total population
       kids_u18      = "S0101_C01_022", # Children under 18
       kids_u5       = "S0101_C01_002", # Children under 5 (New!)
+      kids_5to9     = "S0101_C01_003", # Children 5-9 (age-group pie chart)
+      kids_10to14   = "S0101_C01_004", # Children 10-14 (age-group pie chart)
+      kids_15to17   = "S0101_C01_021", # Children 15-17 (age-group pie chart)
       dis_total     = "DP02_0074",    # Civilian noninstitutionalized children under 18 with a disability
       dis_univ_u18  = "DP02_0073",    # Civilian noninstitutionalized children under 18 (disability universe)
                                       # (Not C18130: its universe is limited to children whose poverty status is determined)
@@ -132,6 +153,17 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       totpop       = totpopE,
       kids_u18     = kids_u18E,
       kids_u5      = kids_u5E,
+      kids_u18_moe = fill_controlled(kids_u18E, kids_u18M), # Needed for race/ethnicity MOEs (joined below)
+      kids_5to9    = kids_5to9E,
+      kids_10to14  = kids_10to14E,
+      kids_15to17  = kids_15to17E,
+      # Age-group shares of children under 18 (pie chart) and their calculated 90% MOEs
+      pct_age_5to9       = round(kids_5to9E / kids_u18E * 100, 1),
+      pct_age_10to14     = round(kids_10to14E / kids_u18E * 100, 1),
+      pct_age_15to17     = round(kids_15to17E / kids_u18E * 100, 1),
+      pct_age_5to9_moe   = pct_moe(kids_5to9E, kids_u18E, kids_5to9M, kids_u18M),
+      pct_age_10to14_moe = pct_moe(kids_10to14E, kids_u18E, kids_10to14M, kids_u18M),
+      pct_age_15to17_moe = pct_moe(kids_15to17E, kids_u18E, kids_15to17M, kids_u18M),
       dis_total    = dis_totalE,
       dis_univ_u18 = dis_univ_u18E,
       pov_u18      = pov_u18E,
@@ -191,6 +223,13 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       pct_two_moreu18 = round((two_more_u18 / kids_u18) * 100, 1),
       pct_whiteNHu18  = round((whiteNH_u18 / kids_u18) * 100, 1),
       pct_Hispu18     = round((hisp_u18 / kids_u18) * 100, 1),
+      # Calculated 90% MOEs for the race/ethnicity shares (sidebar bar chart)
+      pct_blacku18_moe    = pct_moe(black_u18, kids_u18, black_u18_moe, kids_u18_moe),
+      pct_otheru18_moe    = pct_moe(other_all_u18, kids_u18, other_all_u18_moe, kids_u18_moe),
+      pct_asianu18_moe    = pct_moe(asian_u18, kids_u18, asian_u18_moe, kids_u18_moe),
+      pct_two_moreu18_moe = pct_moe(two_more_u18, kids_u18, two_more_u18_moe, kids_u18_moe),
+      pct_whiteNHu18_moe  = pct_moe(whiteNH_u18, kids_u18, whiteNH_u18_moe, kids_u18_moe),
+      pct_Hispu18_moe     = pct_moe(hisp_u18, kids_u18, hisp_u18_moe, kids_u18_moe),
       pct_FB_u18      = round((FB_u18 / kids_u18) * 100, 1),
       pct_snap_hh     = round((snap_hh_kids / tot_hh_kids) * 100, 1),
       pct_no_comp     = round((u18_no_comp / u18_comp_tot) * 100, 1),

@@ -133,15 +133,35 @@
           <p id="activeIndDef"class="text-[10px] leading-snug text-slate-600 mt-1.5"></p>
         </div>
 
-        <!-- Race/Ethnicity Breakdown -->
+        <!-- Demographics: Race/Ethnicity Breakdown + Age Groups -->
+        <section class="space-y-5">
+        <h2 id="demographicsHeading" class="text-sm font-bold text-slate-900 border-b-2 border-teal-700 pb-1 -mb-1">County Demographics</h2>
         <div>
           <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2.5">Child Race & Ethnicity (Under 18)</h3>
           <div id="raceBreakdown" class="space-y-2 text-xs"></div>
           <p class="text-[10px] text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]">
             Note: Hispanic or Latino children may be of any race. Except for White (Non-Hispanic), race groups include Hispanic children of that race, so these shares overlap and may add up to more than 100%.
+            &plusmn; values are 90% margins of error, calculated from published counts; the lighter band on each bar shows that range. Gray bars are unreliable estimates (CV above 40%, or 0% with a nonzero margin of error).
             Source: U.S. Census Bureau ACS 5-Year Estimates (Tables B01001B&ndash;I, S0101).
           </p>
         </div>
+
+        <!-- Age Group Breakdown (pie chart) -->
+        <div>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2.5">Children by Age Group</h3>
+          <p id="ageSuppressed" class="hidden text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-300 rounded px-2 py-1">
+            Not shown: one or more age-group estimates are unreliable
+          </p>
+          <div id="ageChart" class="flex items-center gap-4">
+            <svg id="agePie" viewBox="-1 -1 2 2" class="w-28 h-28 shrink-0 -rotate-90" role="img" aria-label="Children by age group"></svg>
+            <div id="ageLegend" class="flex-1 space-y-1.5 text-xs"></div>
+          </div>
+          <p class="text-[10px] text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]">
+            Share of all children under 18. &plusmn; values are 90% margins of error.
+            Source: U.S. Census Bureau ACS 5-Year Estimates (Table S0101).
+          </p>
+        </div>
+        </section>
 
         <!-- Core Well-Being Scorecard Table -->
         <div>
@@ -409,25 +429,69 @@
       document.getElementById('activeIndCount').textContent = (currentInd.count_id && !activeUnreliable) ? `(${fmtInt(props[currentInd.count_id])} children)` : '';
       document.getElementById('activeIndDef').textContent = currentInd.definition || '';
 
+      const geoNoun = { counties: 'County', house: 'District', senate: 'District', schools: 'School District' }[currentGeo] || '';
+      document.getElementById('demographicsHeading').textContent = `${geoNoun} Demographics`;
+
       const races = [
-        { label: 'Hispanic or Latino', pct: props.pct_Hispu18 },
-        { label: 'White (Non-Hispanic)', pct: props.pct_whiteNHu18 },
-        { label: 'Black or African American', pct: props.pct_blacku18 },
-        { label: 'Asian', pct: props.pct_asianu18 },
-        { label: 'Two or More Races', pct: props.pct_two_moreu18 },
-        { label: 'AIAN, NHPI, or Other Race', pct: props.pct_otheru18 }
+        { label: 'Hispanic or Latino', id: 'pct_Hispu18' },
+        { label: 'White (Non-Hispanic)', id: 'pct_whiteNHu18' },
+        { label: 'Black or African American', id: 'pct_blacku18' },
+        { label: 'Asian', id: 'pct_asianu18' },
+        { label: 'Two or More Races', id: 'pct_two_moreu18' },
+        { label: 'AIAN, NHPI, or Other Race', id: 'pct_otheru18' }
       ];
-      document.getElementById('raceBreakdown').innerHTML = races.map(r => `
+      const clamp = (n) => Math.max(0, Math.min(100, n));
+      document.getElementById('raceBreakdown').innerHTML = races.map(r => {
+        const pct = toNum(props[r.id]) ?? 0;
+        const moe = toNum(props[`${r.id}_moe`]) ?? 0;
+        const unreliable = reliability(props, r.id).status === 'unreliable';
+        const lo = clamp(pct - moe), hi = clamp(pct + moe);
+        return `
         <div>
           <div class="flex justify-between mb-0.5">
-            <span class="text-slate-700">${r.label}</span>
-            <span class="font-semibold text-slate-900">${fmtPct(r.pct)}</span>
+            <span class="${unreliable ? 'text-slate-500' : 'text-slate-700'}">${r.label}</span>
+            <span class="whitespace-nowrap">
+              <span class="font-semibold ${unreliable ? 'text-slate-500' : 'text-slate-900'}">${fmtPct(props[r.id])}</span>
+              <span class="text-[10px] text-slate-500 ml-0.5">${fmtMoe(props, r.id)}</span>
+            </span>
           </div>
-          <div class="w-full bg-[#E5D7C3]/70 h-1.5 rounded overflow-hidden">
-            <div class="bg-teal-700 h-full" style="width:${Math.min(100, r.pct || 0)}%"></div>
+          <div class="relative w-full bg-[#E5D7C3]/70 h-1.5 rounded overflow-hidden">
+            <div class="absolute inset-y-0 left-0 h-full" style="width:${clamp(pct)}%;background:${unreliable ? UNRELIABLE_COLOR : '#0f766e'}"></div>
+            <div class="absolute inset-y-0 h-full" style="left:${lo}%;width:${hi - lo}%;background:${unreliable ? UNRELIABLE_COLOR : '#0f766e'};opacity:0.35"></div>
           </div>
-        </div>
-      `).join('');
+        </div>`;
+      }).join('');
+
+      // Age-group pie chart (slices drawn from shares normalized to sum to 100%, so rounding never leaves a gap)
+      const ages = [
+        { label: 'Under 5', id: 'pct_u5', color: '#134e4a' },
+        { label: '5 to 9', id: 'pct_age_5to9', color: '#0f766e' },
+        { label: '10 to 14', id: 'pct_age_10to14', color: '#2dd4bf' },
+        { label: '15 to 17', id: 'pct_age_15to17', color: '#99f6e4' }
+      ];
+      // Only show the pie when every slice is reliable (same CV rule as the map), so no slice is missing or suppressed
+      const ageSuppressed = ages.some(a => reliability(props, a.id).status !== 'reliable');
+      document.getElementById('ageSuppressed').classList.toggle('hidden', !ageSuppressed);
+      document.getElementById('ageChart').classList.toggle('hidden', ageSuppressed);
+      const ageTotal = ages.reduce((s, a) => s + (toNum(props[a.id]) ?? 0), 0);
+      let angle = 0;
+      document.getElementById('agePie').innerHTML = ageTotal > 0 ? ages.map(a => {
+        const frac = (toNum(props[a.id]) ?? 0) / ageTotal;
+        const start = angle; angle += frac * 2 * Math.PI;
+        if (frac >= 0.9999) return `<circle r="1" fill="${a.color}" />`;
+        const [x1, y1, x2, y2] = [Math.cos(start), Math.sin(start), Math.cos(angle), Math.sin(angle)];
+        return `<path d="M0 0 L${x1} ${y1} A1 1 0 ${frac > 0.5 ? 1 : 0} 1 ${x2} ${y2} Z" fill="${a.color}" stroke="#F8EFE1" stroke-width="0.03" stroke-linejoin="round" />`;
+      }).join('') : `<circle r="1" fill="${UNRELIABLE_COLOR}" />`;
+      document.getElementById('ageLegend').innerHTML = ages.map(a => `
+        <div class="flex items-center justify-between gap-2">
+          <span class="flex items-center gap-1.5 text-slate-700">
+            <span class="inline-block w-2.5 h-2.5 rounded-sm ring-1 ring-black/10 shrink-0" style="background:${a.color}"></span>${a.label}
+          </span>
+          <span class="whitespace-nowrap">
+            <span class="font-semibold text-slate-900">${fmtPct(props[a.id])}</span>
+            <span class="text-[10px] text-slate-500 ml-0.5">${fmtMoe(props, a.id)}</span>
+          </span>
+        </div>`).join('');
 
       document.getElementById('allIndicatorsList').innerHTML = availableIndicators().map(ind => {
         const unreliable = reliability(props, ind.id).status === 'unreliable';
