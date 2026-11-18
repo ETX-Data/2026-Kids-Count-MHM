@@ -7,21 +7,55 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <style>
+    /* Print-friendly District Fact Sheet rules */
+    @media print {
+      body {
+        height: auto !important;
+        overflow: visible !important;
+        background: #ffffff !important;
+      }
+      #map, #headerControls, #printBtn, #sidebarEmpty {
+        display: none !important;
+      }
+      header {
+        border-bottom: 2px solid #0f766e !important;
+        background: #ffffff !important;
+        box-shadow: none !important;
+      }
+      aside {
+        width: 100% !important;
+        border: none !important;
+        box-shadow: none !important;
+        background: #ffffff !important;
+        overflow: visible !important;
+        padding: 1.5rem 0 !important;
+      }
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+    }
+  </style>
 </head>
 <body class="bg-slate-50 text-slate-900 h-screen flex flex-col overflow-hidden">
 
-  <!-- Top Navigation & Filter Header -->
-  <header class="bg-white border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-4 z-10 shadow-sm">
-    <div>
-      <span class="text-xs font-bold uppercase tracking-wider text-teal-700">Every Texan • 2026 Kids Count</span>
-      <h1 class="text-lg font-bold text-slate-800">Texas Child Well-Being Interactive Map</h1>
+  <!-- Top Navigation & Filter Header (#F8EFE1 theme) -->
+  <header class="bg-[#F8EFE1] border-b border-[#E5D7C3] px-6 py-3 flex flex-wrap items-center justify-between gap-4 z-10 shadow-sm">
+    <div class="flex items-center gap-3.5">
+      <!-- Put your logo at docs/logo.png or change the src URL below -->
+      <img src="./logo.png" alt="Every Texan Logo" class="h-10 w-auto object-contain" onerror="this.style.display='none'" />
+      <div>
+        <span class="text-xs font-bold uppercase tracking-wider text-teal-800">Every Texan • 2026 Kids Count</span>
+        <h1 class="text-lg font-bold text-slate-900">Texas Child Well-Being Interactive Map</h1>
+      </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-3">
+    <div id="headerControls" class="flex flex-wrap items-center gap-3">
       <!-- Geography Switcher -->
       <div>
-        <label class="block text-[11px] font-semibold uppercase text-slate-500 mb-0.5">Geography</label>
-        <select id="geoSelect" class="border border-slate-300 rounded-md px-3 py-1.5 text-sm font-medium bg-white focus:outline-none focus:ring-2 focus:ring-teal-600">
+        <label class="block text-[11px] font-semibold uppercase text-slate-600 mb-0.5">Geography</label>
+        <select id="geoSelect" class="border border-[#D8C7AE] rounded-md px-3 py-1.5 text-sm font-medium bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-700">
           <option value="counties">Texas Counties (254)</option>
           <option value="house">TX House Districts (150)</option>
           <option value="senate">TX Senate Districts (31)</option>
@@ -29,10 +63,18 @@
         </select>
       </div>
 
-      <!-- Indicator Switcher (Populated Dynamically from indicators.json) -->
+      <!-- Search District / County / ISD -->
       <div>
-        <label class="block text-[11px] font-semibold uppercase text-slate-500 mb-0.5">Indicator</label>
-        <select id="indicatorSelect" class="border border-slate-300 rounded-md px-3 py-1.5 text-sm font-medium bg-white focus:outline-none focus:ring-2 focus:ring-teal-600 min-w-[280px]">
+        <label class="block text-[11px] font-semibold uppercase text-slate-600 mb-0.5">Search Location</label>
+        <input id="searchInput" list="geoList" type="text" placeholder="Type name or district #..." 
+               class="border border-[#D8C7AE] rounded-md px-3 py-1.5 text-sm bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-700 w-52" />
+        <datalist id="geoList"></datalist>
+      </div>
+
+      <!-- Indicator Switcher -->
+      <div>
+        <label class="block text-[11px] font-semibold uppercase text-slate-600 mb-0.5">Indicator</label>
+        <select id="indicatorSelect" class="border border-[#D8C7AE] rounded-md px-3 py-1.5 text-sm font-medium bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-700 min-w-[260px]">
         </select>
       </div>
     </div>
@@ -41,35 +83,42 @@
   <!-- Main Workspace: Map + Right Scorecard Sidebar -->
   <div class="flex-1 flex overflow-hidden relative">
     
-    <!-- Map Container -->
+    <!-- Map Container (Original unmodified CARTO basemap) -->
     <div id="map" class="flex-1 h-full relative">
-      <!-- Floating Legend -->
-      <div id="legend" class="absolute bottom-6 left-6 bg-white/95 backdrop-blur border border-slate-200 rounded-lg p-3.5 shadow-md z-10 max-w-xs">
-        <div id="legendTitle" class="text-xs font-bold text-slate-700 mb-2"></div>
-        <div id="legendBar" class="flex h-3 rounded overflow-hidden mb-1"></div>
-        <div id="legendLabels" class="flex justify-between text-[11px] text-slate-600 font-medium"></div>
-        <div id="legendSource" class="text-[10px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100"></div>
+      <!-- Floating Legend (#F8EFE1 theme) -->
+      <div id="legend" class="absolute bottom-6 left-6 bg-[#F8EFE1]/95 backdrop-blur border border-[#E5D7C3] rounded-lg p-3.5 shadow-md z-10 max-w-xs">
+        <div id="legendTitle" class="text-xs font-bold text-slate-800 mb-2"></div>
+        <div id="legendBar" class="flex h-3 rounded overflow-hidden mb-1 ring-1 ring-black/10"></div>
+        <div id="legendLabels" class="flex justify-between text-[11px] text-slate-700 font-medium"></div>
+        <div id="legendSource" class="text-[10px] text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]"></div>
       </div>
     </div>
 
-    <!-- Right Sidebar Scorecard -->
-    <aside class="w-96 bg-white border-l border-slate-200 h-full overflow-y-auto p-6 shadow-lg z-10">
-      <div id="sidebarEmpty" class="text-sm text-slate-500 py-12 text-center">
-        Click any county, legislative district, or school district on the map to inspect its full child well-being profile.
+    <!-- Right Sidebar Scorecard (#F8EFE1 theme) -->
+    <aside class="w-96 bg-[#F8EFE1] border-l border-[#E5D7C3] h-full overflow-y-auto p-6 shadow-lg z-10">
+      <div id="sidebarEmpty" class="text-sm text-slate-600 py-12 text-center">
+        Click any county, legislative district, or school district on the map—or use the search bar above—to inspect or print its full child well-being profile.
       </div>
 
       <div id="sidebarContent" class="hidden space-y-6">
-        <div class="border-b border-slate-200 pb-4">
-          <span id="profileGeoType" class="text-xs font-semibold uppercase tracking-wider text-teal-700"></span>
-          <h2 id="profileName" class="text-xl font-bold text-slate-900 mt-0.5"></h2>
-          <p class="text-xs text-slate-500 mt-1">
-            Total Child Population (Under 18): <strong id="profileTotalKids" class="text-slate-800"></strong>
-            (<span id="profilePctKids"></span>% of total pop)
-          </p>
+        <div class="border-b border-[#E5D7C3] pb-4 flex items-start justify-between gap-2">
+          <div>
+            <span id="profileGeoType" class="text-xs font-semibold uppercase tracking-wider text-teal-800"></span>
+            <h2 id="profileName" class="text-xl font-bold text-slate-900 mt-0.5"></h2>
+            <p class="text-xs text-slate-700 mt-1">
+              Total Child Population (Under 18): <strong id="profileTotalKids" class="text-slate-900"></strong>
+              (<span id="profilePctKids"></span>% of total pop)
+            </p>
+          </div>
+          <!-- Print / Save PDF Button -->
+          <button id="printBtn" onclick="window.print()" title="Print or Save Profile as PDF"
+                  class="shrink-0 bg-white hover:bg-teal-50 text-teal-800 border border-[#D8C7AE] rounded-md px-2.5 py-1.5 text-xs font-semibold shadow-sm transition">
+            Print / PDF
+          </button>
         </div>
 
         <!-- Highlighted Active Indicator Card -->
-        <div class="bg-teal-50/70 border border-teal-200 rounded-lg p-4">
+        <div class="bg-white/80 border border-[#D8C7AE] rounded-lg p-4 shadow-sm">
           <div id="activeIndLabel" class="text-xs font-semibold text-teal-900 uppercase"></div>
           <div class="flex items-baseline gap-2 mt-1">
             <span id="activeIndPct" class="text-3xl font-extrabold text-teal-800"></span>
@@ -79,21 +128,21 @@
 
         <!-- Race/Ethnicity Breakdown -->
         <div>
-          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">Child Race & Ethnicity (Under 18)</h3>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2.5">Child Race & Ethnicity (Under 18)</h3>
           <div id="raceBreakdown" class="space-y-2 text-xs"></div>
         </div>
 
         <!-- Core Well-Being Scorecard Table -->
         <div>
-          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">All Core Indicators</h3>
-          <div id="allIndicatorsList" class="divide-y divide-slate-100 text-xs"></div>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2.5">All Core Indicators</h3>
+          <div id="allIndicatorsList" class="divide-y divide-[#E5D7C3] text-xs"></div>
         </div>
       </div>
     </aside>
   </div>
 
   <script>
-    let map, indicators = [], currentGeo = 'counties', currentInd = null, selectedFeature = null;
+    let map, indicators = [], currentGeo = 'counties', currentInd = null, selectedFeature = null, currentGeoJSON = null;
     const fmtInt = (n) => (n !== null && n !== undefined && !isNaN(n)) ? Number(n).toLocaleString() : 'N/A';
     const fmtPct = (n) => (n !== null && n !== undefined && !isNaN(n)) ? `${Number(n).toFixed(1)}%` : 'N/A';
 
@@ -117,7 +166,7 @@
         select.appendChild(group);
       });
 
-      // Initialize Free MapLibre Map with CARTO Positron Basemap
+      // Initialize Free MapLibre Map with unmodified CARTO Positron Basemap
       map = new maplibregl.Map({
         container: 'map',
         style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
@@ -133,6 +182,7 @@
       document.getElementById('geoSelect').addEventListener('change', (e) => {
         currentGeo = e.target.value;
         selectedFeature = null;
+        document.getElementById('searchInput').value = '';
         document.getElementById('sidebarEmpty').classList.remove('hidden');
         document.getElementById('sidebarContent').classList.add('hidden');
         loadGeoLayer(currentGeo);
@@ -142,6 +192,18 @@
         currentInd = indicators.find(i => i.id === e.target.value);
         updateChoropleth();
         if (selectedFeature) renderSidebar(selectedFeature);
+      });
+
+      // Search Bar Handler
+      document.getElementById('searchInput').addEventListener('input', (e) => {
+        const val = e.target.value.trim();
+        if (!currentGeoJSON || !val) return;
+        const match = currentGeoJSON.features.find(
+          f => f.properties.NAME && f.properties.NAME.toLowerCase() === val.toLowerCase()
+        );
+        if (match) {
+          selectAndZoomToFeature(match);
+        }
       });
     }
 
@@ -153,13 +215,26 @@
       return expr;
     }
 
-    function loadGeoLayer(geoSlug) {
+    async function loadGeoLayer(geoSlug) {
       const url = `./data/${geoSlug}.geojson`;
+      const res = await fetch(url);
+      currentGeoJSON = await res.json();
+
+      // Populate autocomplete search datalist
+      const dataList = document.getElementById('geoList');
+      dataList.innerHTML = currentGeoJSON.features
+        .map(f => f.properties.NAME)
+        .filter(Boolean)
+        .sort()
+        .map(name => `<option value="${name}"></option>`)
+        .join('');
+
+      if (map.getLayer('poly-highlight')) map.removeLayer('poly-highlight');
       if (map.getLayer('poly-fill')) map.removeLayer('poly-fill');
       if (map.getLayer('poly-line')) map.removeLayer('poly-line');
       if (map.getSource('kids-geo')) map.removeSource('kids-geo');
 
-      map.addSource('kids-geo', { type: 'geojson', data: url });
+      map.addSource('kids-geo', { type: 'geojson', data: currentGeoJSON });
 
       map.addLayer({
         id: 'poly-fill',
@@ -181,9 +256,24 @@
         }
       });
 
+      // Active selection highlight border layer
+      map.addLayer({
+        id: 'poly-highlight',
+        type: 'line',
+        source: 'kids-geo',
+        paint: {
+          'line-color': '#0f766e',
+          'line-width': 2.5
+        },
+        filter: ['==', 'GEOID', '']
+      });
+
       map.on('click', 'poly-fill', (e) => {
         if (e.features.length > 0) {
-          selectedFeature = e.features[0].properties;
+          const clicked = e.features[0];
+          selectedFeature = clicked.properties;
+          document.getElementById('searchInput').value = selectedFeature.NAME || '';
+          map.setFilter('poly-highlight', ['==', 'GEOID', selectedFeature.GEOID || '']);
           renderSidebar(selectedFeature);
         }
       });
@@ -192,6 +282,26 @@
       map.on('mouseleave', 'poly-fill', () => map.getCanvas().style.cursor = '');
 
       updateLegend();
+    }
+
+    // Compute polygon bounding box and fly to searched feature
+    function selectAndZoomToFeature(feature) {
+      selectedFeature = feature.properties;
+      renderSidebar(selectedFeature);
+      map.setFilter('poly-highlight', ['==', 'GEOID', selectedFeature.GEOID || '']);
+
+      const bounds = new maplibregl.LngLatBounds();
+      const extendCoords = (coords) => {
+        if (typeof coords[0] === 'number') {
+          bounds.extend(coords);
+        } else {
+          coords.forEach(extendCoords);
+        }
+      };
+      if (feature.geometry && feature.geometry.coordinates) {
+        extendCoords(feature.geometry.coordinates);
+        map.fitBounds(bounds, { padding: 60, maxZoom: 10 });
+      }
     }
 
     function updateChoropleth() {
@@ -235,18 +345,18 @@
       document.getElementById('raceBreakdown').innerHTML = races.map(r => `
         <div>
           <div class="flex justify-between mb-0.5">
-            <span class="text-slate-600">${r.label}</span>
-            <span class="font-semibold text-slate-800">${fmtPct(r.pct)}</span>
+            <span class="text-slate-700">${r.label}</span>
+            <span class="font-semibold text-slate-900">${fmtPct(r.pct)}</span>
           </div>
-          <div class="w-full bg-slate-100 h-1.5 rounded overflow-hidden">
-            <div class="bg-teal-600 h-full" style="width:${Math.min(100, r.pct || 0)}%"></div>
+          <div class="w-full bg-[#E5D7C3]/70 h-1.5 rounded overflow-hidden">
+            <div class="bg-teal-700 h-full" style="width:${Math.min(100, r.pct || 0)}%"></div>
           </div>
         </div>
       `).join('');
 
       document.getElementById('allIndicatorsList').innerHTML = indicators.map(ind => `
         <div class="py-2 flex justify-between items-center">
-          <span class="text-slate-600 pr-2">${ind.label}</span>
+          <span class="text-slate-700 pr-2">${ind.label}</span>
           <span class="font-bold text-slate-900">${fmtPct(props[ind.id])}</span>
         </div>
       `).join('');
