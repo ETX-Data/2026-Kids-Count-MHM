@@ -6,7 +6,7 @@
     "label": "Children with Disabilities",
     "definition": "Share of civilian noninstitutionalized children under 18 with a hearing, vision, cognitive, ambulatory, self-care, or independent living difficulty.",
     "category": "Demographics",
-    "source": "U.S. Census Bureau, American Community Survey (ACS) 5-Year Estimates (Table DP02)",
+    "source": "U.S. Census Bureau, 2024 American Community Survey (ACS) 5-Year Estimates (Table DP02)",
     "stops": [3, 4.5, 6, 7.5, 9],
     "colors": ["#edf8e9", "#c7e9c0", "#a1d99b", "#74c476", "#31a354", "#006d2c"]
   },
@@ -17,7 +17,7 @@
     "label": "Young Children (Under Age 5 Share of Kids)",
     "definition": "Children under age 5 as a share of all children under 18.",
     "category": "Demographics",
-    "source": "U.S. Census Bureau, American Community Survey (ACS) 5-Year Estimates (Table S0101)",
+    "source": "U.S. Census Bureau, 2024 American Community Survey (ACS) 5-Year Estimates (Table S0101)",
     "stops": [20, 23, 26, 29, 32],
     "colors": ["#f2f0f7", "#dadaeb", "#bcbddc", "#9e9ac8", "#756bb1", "#54278f"]
   },
@@ -28,7 +28,7 @@
     "label": "Children (5-17) in Limited English Speaking Households",
     "definition": "Share of children ages 5 to 17 living in households where no one age 14 or older speaks only English or speaks English \"very well.\"",
     "category": "Demographics",
-    "source": "U.S. Census Bureau, American Community Survey (ACS) 5-Year Estimates (Tables B16003, B16004)",
+    "source": "U.S. Census Bureau, 2024 American Community Survey (ACS) 5-Year Estimates (Tables B16003, B16004)",
     "stops": [2, 4, 7, 10, 15],
     "colors": ["#edf8e9", "#c7e9c0", "#a1d99b", "#74c476", "#31a354", "#006d2c"]
   },
@@ -39,7 +39,7 @@
     "label": "Foreign-Born Children",
     "definition": "Share of children under 18 who were not U.S. citizens at birth (born outside the U.S. to non-citizen parents).",
     "category": "Demographics",
-    "source": "U.S. Census Bureau, American Community Survey (ACS) 5-Year Estimates (Tables B05003, S0101)",
+    "source": "U.S. Census Bureau, 2024 American Community Survey (ACS) 5-Year Estimates (Tables B05003, S0101)",
     "stops": [1, 2, 4, 6, 10],
     "colors": ["#edf8e9", "#c7e9c0", "#a1d99b", "#74c476", "#31a354", "#006d2c"]
   },
@@ -50,7 +50,7 @@
     "label": "Children in Single-Parent Households",
     "definition": "Share of own children under 18 in families who live with a single parent (male or female householder, no spouse present).",
     "category": "Demographics",
-    "source": "U.S. Census Bureau, American Community Survey (ACS) 5-Year Estimates (Table B09002)",
+    "source": "U.S. Census Bureau, 2024 American Community Survey (ACS) 5-Year Estimates (Table B09002)",
     "stops": [15, 20, 25, 30, 35],
     "colors": ["#edf8e9", "#c7e9c0", "#a1d99b", "#74c476", "#31a354", "#006d2c"]
   },
@@ -74,7 +74,7 @@
     "label": "Children in Poverty (<100% FPL)",
     "definition": "Share of children under 18 (for whom poverty status is determined) living in families with incomes below 100% of the federal poverty level.",
     "category": "Economic Security",
-    "source": "U.S. Census Bureau, American Community Survey (ACS) 5-Year Estimates (Table S1701)",
+    "source": "U.S. Census Bureau, 2024 American Community Survey (ACS) 5-Year Estimates (Table S1701)",
     "stops": [10, 15, 20, 25, 30],
     "colors": ["#fef0d9", "#fdcc8a", "#fc8d59", "#e34a33", "#b30000", "#7f0000"]
   },
@@ -85,7 +85,7 @@
     "label": "Households with Children Receiving SNAP",
     "definition": "Share of households with children under 18 that received SNAP (food stamp) benefits in the past 12 months.",
     "category": "Economic Security",
-    "source": "U.S. Census Bureau, American Community Survey (ACS) 5-Year Estimates (Table B22002)",
+    "source": "U.S. Census Bureau, 2024 American Community Survey (ACS) 5-Year Estimates (Table B22002)",
     "stops": [8, 14, 20, 26, 32],
     "colors": ["#f1eef6", "#d0d1e6", "#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d"]
   },
@@ -109,7 +109,7 @@
     "label": "Uninsured Children (Under 19)",
     "definition": "Share of civilian noninstitutionalized children under 19 with no health insurance coverage.",
     "category": "Health",
-    "source": "U.S. Census Bureau, American Community Survey (ACS) 5-Year Estimates (Table S2701)",
+    "source": "U.S. Census Bureau, 2024 American Community Survey (ACS) 5-Year Estimates (Table S2701)",
     "stops": [6, 10, 14, 18, 22],
     "colors": ["#edf8fb", "#bfd3e6", "#9ebcda", "#8c96c6", "#8856a7", "#810f7c"]
   },
@@ -134,7 +134,7 @@
     "label": "Children Without Home Internet Access",
     "definition": "Share of children under 18 in households that have a computer but no internet subscription.",
     "category": "Education",
-    "source": "U.S. Census Bureau, American Community Survey (ACS) 5-Year Estimates (Table B28005)",
+    "source": "U.S. Census Bureau, 2024 American Community Survey (ACS) 5-Year Estimates (Table B28005)",
     "stops": [4, 8, 12, 16, 20],
     "colors": ["#ffffcc", "#c7e9b4", "#7fcdbb", "#41b6c4", "#2c7fb8", "#253494"]
   },
