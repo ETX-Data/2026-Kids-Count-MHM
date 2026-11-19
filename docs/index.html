@@ -162,6 +162,7 @@
           </div>
           <p id="activeIndRel" class="hidden text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-300 rounded px-2 py-1 mt-2"></p>
           <div id="activeIndBench"></div>
+          <div id="activeIndDots" class="mt-3"></div>
           <p id="activeIndDef"class="text-xs leading-snug text-slate-600 mt-1.5"></p>
         </div>
 
@@ -251,6 +252,10 @@
     }
     // Unreliable estimates are suppressed: no value, margin of error, or count is shown
     const SUPPRESSED_NOTE = 'Not shown: estimate is unreliable';
+    // Missing values. For ACS indicators these all come from a denominator of 0 (for example, the ACS estimates no
+    // children in Loving County), not from Census suppression. Other sources can set "missing_note" in indicators.json.
+    const missingNote = (ind) => ind?.missing_note
+      || (!ind || /Census|ACS/.test(ind.source || '') ? 'No estimate: ACS estimates 0 children in this group' : 'No data');
 
     // ---- Texas / U.S. comparisons ----
     // Compares an area with Texas using the Census Bureau's test for a difference between two ACS estimates at
@@ -284,6 +289,109 @@
       return compact
         ? `<p class="text-xs text-slate-600 mt-0.5">${parts.join(' · ')}${badge ? ' · ' + badge : ''}</p>`
         : `<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-700 mt-2"><span>${parts.join(' · ')}</span>${badge}</div>`;
+    }
+
+    // Percent axis clamped to 0-100 and rounded out to at most ~5 evenly spaced ticks
+    function niceAxis(lo, hi) {
+      lo = Math.max(0, lo); hi = Math.min(100, hi);
+      if (hi <= lo) hi = lo + 1;
+      const step = [1, 2, 5, 10, 20, 25].find(s => (Math.ceil(hi / s) - Math.floor(lo / s)) <= 5) || 25;
+      return { lo: Math.floor(lo / step) * step, hi: Math.ceil(hi / step) * step, step };
+    }
+
+    // "Where this area falls": every area in the current geography with a reliable estimate, as a faint dot,
+    // with the selected area highlighted. No rank numbers: MOEs overlap too much for exact ranks to mean much.
+    const GEO_PLURAL = { counties: 'counties', house: 'House districts', senate: 'Senate districts', schools: 'school districts' };
+    function stripChartHTML(props, ind) {
+      if (!currentGeoJSON) return '';
+      const id = ind.id, noun = GEO_PLURAL[currentGeo] || 'areas';
+      const all = currentGeoJSON.features.map(f => f.properties);
+      const pts = all.filter(p => reliability(p, id).status === 'reliable').map(p => ({ v: toNum(p[id]), name: shortName(p.NAME), self: p.GEOID === props.GEOID }));
+      if (pts.length < 5) return '';
+      const selfPt = pts.find(p => p.self);
+      const { lo, hi, step } = niceAxis(Math.min(...pts.map(p => p.v)), Math.max(...pts.map(p => p.v)));
+      const W = 300, L = 4, R = 296, mid = 24, H = 62;
+      const x = (v) => L + (v - lo) / (hi - lo) * (R - L);
+      let svg = '';
+      for (let t = lo; t <= hi + 1e-9; t += step) {
+        svg += `<line x1="${x(t)}" x2="${x(t)}" y1="6" y2="${H - 16}" stroke="#E5D7C3" stroke-width="1"/>`;
+        svg += `<text x="${x(t)}" y="${H - 3}" text-anchor="${t === lo ? 'start' : t >= hi - 1e-9 ? 'end' : 'middle'}" font-size="10" fill="#475569">${t}%</text>`;
+      }
+      // Fixed vertical jitter (no randomness) so dots don't sit on top of one another and the chart is stable
+      pts.forEach((p, i) => {
+        if (p.self) return;
+        svg += `<circle cx="${x(p.v)}" cy="${mid + ((i * 37) % 13 - 6) * 2}" r="2.6" fill="#0f766e" fill-opacity="0.22"><title>${esc(p.name)}: ${fmtPct(p.v)}</title></circle>`;
+      });
+      const tx = benchmarks ? toNum(benchmarks.texas?.[id]) : null;
+      if (tx !== null && tx >= lo && tx <= hi) {
+        svg += `<line x1="${x(tx)}" x2="${x(tx)}" y1="6" y2="${H - 16}" stroke="#0f172a" stroke-width="1.5"><title>Texas: ${fmtPct(tx)}</title></line>`;
+      }
+      if (selfPt) {
+        svg += `<circle cx="${x(selfPt.v)}" cy="${mid}" r="6" fill="#0f766e" stroke="#fff" stroke-width="2"><title>${esc(selfPt.name)}: ${fmtPct(selfPt.v)}</title></circle>`;
+      }
+      // Plain-language position: share of other areas with a lower value (ties count half)
+      let summary;
+      if (selfPt) {
+        const others = pts.filter(p => !p.self);
+        const below = others.filter(p => p.v < selfPt.v).length + others.filter(p => p.v === selfPt.v).length / 2;
+        const share = below / others.length * 100;
+        summary = share < 10 ? `Among the lowest ${noun}` : share < 35 ? `Lower than most ${noun}`
+          : share <= 65 ? `Near the middle of Texas ${noun}` : share <= 90 ? `Higher than most ${noun}` : `Among the highest ${noun}`;
+      } else {
+        summary = reliability(props, id).status === 'missing' ? esc(missingNote(ind)) : 'This area is not shown (unreliable estimate)';
+      }
+      const hidden = all.length - pts.length;
+      return `
+        <div class="mt-3 pt-2.5 border-t border-[#E5D7C3]">
+          <div class="flex items-baseline justify-between gap-2">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-600">Compared with other ${noun}</span>
+          </div>
+          <p class="text-xs font-semibold text-teal-900 mt-0.5">${summary}</p>
+          <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto mt-1" role="img" aria-label="${esc(ind.label)} for all ${noun}, with this area highlighted">${svg}</svg>
+          <p class="text-[11px] text-slate-600 mt-1">Each faint dot is one of ${pts.length} ${noun} with a reliable estimate${hidden ? ` (${hidden} not shown)` : ''}; the black line is Texas. Margins of error often overlap, so small differences in position are not meaningful.</p>
+        </div>`;
+    }
+
+    // Dot chart: this area, Texas, and U.S. for one indicator, each with its 90% MOE as a whisker
+    function dotChartHTML(props, id) {
+      if (!benchmarks) return '';
+      const status = reliability(props, id).status;
+      const unreliable = status !== 'reliable';
+      const rows = [
+        { label: 'This area', v: unreliable ? null : toNum(props[id]), m: toNum(props[`${id}_moe`]) ?? 0, color: '#0f766e', bold: true },
+        { label: 'Texas', v: toNum(benchmarks.texas?.[id]), m: toNum(benchmarks.texas?.[`${id}_moe`]) ?? 0, color: '#0f172a' },
+        { label: 'U.S.', v: toNum(benchmarks.us?.[id]), m: toNum(benchmarks.us?.[`${id}_moe`]) ?? 0, color: '#64748b' }
+      ];
+      const shown = rows.filter(r => r.v !== null);
+      if (shown.length < 2) return '';
+      // Axis spans every whisker, padded and rounded out to evenly spaced ticks
+      const span = Math.min(...shown.map(r => r.v - r.m)), spanHi = Math.max(...shown.map(r => r.v + r.m));
+      const pad = Math.max((spanHi - span) * 0.15, 1);
+      const { lo, hi, step } = niceAxis(span - pad, spanHi + pad);
+      const W = 300, L = 62, R = 286, rowH = 22, top = 8, H = top + rows.length * rowH + 18;
+      const x = (v) => L + (v - lo) / (hi - lo) * (R - L);
+      let svg = '';
+      for (let t = lo; t <= hi + 1e-9; t += step) {
+        svg += `<line x1="${x(t)}" x2="${x(t)}" y1="${top - 4}" y2="${top + rows.length * rowH - 6}" stroke="#E5D7C3" stroke-width="1"/>`;
+        svg += `<text x="${x(t)}" y="${H - 4}" text-anchor="middle" font-size="10" fill="#475569">${t}%</text>`;
+      }
+      rows.forEach((r, i) => {
+        const y = top + i * rowH + rowH / 2 - 3;
+        svg += `<text x="0" y="${y + 3.5}" font-size="11" fill="#334155"${r.bold ? ' font-weight="700"' : ''}>${r.label}</text>`;
+        if (r.v === null) {
+          svg += `<text x="${L}" y="${y + 3.5}" font-size="10" fill="#64748b" font-style="italic">${status === 'missing' ? esc(missingNote(currentInd)) : 'Not shown (unreliable)'}</text>`;
+          return;
+        }
+        const a = x(Math.max(lo, r.v - r.m)), b = x(Math.min(hi, r.v + r.m));
+        if (r.m > 0) {
+          svg += `<line x1="${a}" x2="${b}" y1="${y}" y2="${y}" stroke="${r.color}" stroke-width="2" stroke-linecap="round" opacity="0.55"/>`;
+          svg += `<line x1="${a}" x2="${a}" y1="${y - 4}" y2="${y + 4}" stroke="${r.color}" stroke-width="1.5" opacity="0.55"/>`;
+          svg += `<line x1="${b}" x2="${b}" y1="${y - 4}" y2="${y + 4}" stroke="${r.color}" stroke-width="1.5" opacity="0.55"/>`;
+        }
+        svg += `<circle cx="${x(r.v)}" cy="${y}" r="${r.bold ? 5 : 4}" fill="${r.color}" stroke="#fff" stroke-width="1.5"><title>${r.label}: ${fmtPct(r.v)}${r.m ? ` ± ${r.m.toFixed(1)}` : ''}</title></circle>`;
+      });
+      return `<svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" role="img" aria-label="${esc(currentInd.label)}: this area compared with Texas and the U.S., with 90% margins of error">${svg}</svg>
+        <p class="text-[11px] text-slate-600 mt-1">Lines show 90% margins of error. Texas and U.S. ranges are often too narrow to see.</p>`;
     }
 
     // ---- Shareable links: #<geography>/<indicator id>/<GEOID> ----
@@ -420,6 +528,19 @@
         if (place) locate({ lon: place[1], lat: place[2], label: place[0] });
       });
 
+      // Cities aren't in the dropdown, so on Enter (or leaving the box) also accept a bare city name like "Austin",
+      // matched to "Austin (city)". When a name is both a city and a community, the first listed (the city) wins.
+      document.getElementById('searchInput').addEventListener('change', (e) => {
+        const val = e.target.value.trim().toLowerCase();
+        if (!val || !searchPlaces || /^\d{5}$/.test(val)) return;
+        if (selectedFeature?.NAME?.toLowerCase() === val || lastLocation?.label?.toLowerCase() === val) return;
+        if (currentGeoJSON?.features.some(f => f.properties.NAME?.toLowerCase() === val)) return;
+        const place = searchPlaces.places.find(p => p[0].toLowerCase() === val)
+          || searchPlaces.places.find(p => p[0].replace(/ \([^)]*\)$/, '').toLowerCase() === val);
+        if (place) locate({ lon: place[1], lat: place[2], label: place[0] });
+        else showSearchMsg(`No match for "${e.target.value.trim()}". Try an area name, a Texas city, or a 5-digit ZIP code.`);
+      });
+
       document.getElementById('copyLinkBtn').addEventListener('click', copyLink);
       document.getElementById('csvPlaceBtn').addEventListener('click', () => {
         if (selectedFeature) downloadCSV([selectedFeature], `${slugify(shortName(selectedFeature.NAME))}`);
@@ -542,7 +663,7 @@
       const value = rel === 'reliable'
         ? `<span class="text-base font-extrabold text-teal-800">${fmtPct(props[currentInd.id])}</span>
            <span class="text-[11px] font-semibold text-teal-700">${fmtMoe(props, currentInd.id)}</span>`
-        : `<span class="text-[11px] font-semibold text-slate-600">${rel === 'missing' ? 'No data' : 'Unreliable estimate (not shown)'}</span>`;
+        : `<span class="text-[11px] font-semibold text-slate-600">${rel === 'missing' ? esc(missingNote(currentInd)) : 'Unreliable estimate (not shown)'}</span>`;
       const tx = benchmarks ? toNum(benchmarks.texas?.[currentInd.id]) : null;
       return `
         <div class="text-xs text-slate-800">
@@ -561,10 +682,9 @@
       currentGeoJSON = data;
       currentGeoJSON.features.forEach(f => { f.bbox = featureBBox(f); });
 
-      // Autocomplete: area names in this geography, then Texas cities and communities (ZIP codes are typed in full)
+      // Autocomplete lists only area names in this geography. Cities, communities, and ZIP codes still work when typed.
       const names = currentGeoJSON.features.map(f => f.properties.NAME).filter(Boolean).sort();
-      const placeLabels = searchPlaces ? searchPlaces.places.map(p => p[0]) : [];
-      document.getElementById('geoList').innerHTML = [...names, ...placeLabels]
+      document.getElementById('geoList').innerHTML = names
         .map(name => `<option value="${esc(name)}"></option>`)
         .join('');
 
@@ -718,14 +838,14 @@
         { head: 'Children under 18', get: p => p.kids_u18 }
       ];
       // Each percentage gets its value, 90% MOE, and reliability flag (values are included even when unreliable)
-      const pctCols = (label, id, countId) => {
+      const pctCols = (label, id, countId, ind) => {
         cols.push({ head: `${label} (%)`, get: p => p[id] });
         cols.push({ head: `${label} (%) 90% MOE`, get: p => p[`${id}_moe`] });
         if (countId) cols.push({ head: `${label} (count)`, get: p => p[countId] });
-        cols.push({ head: `${label} reliability`, get: p => ({ reliable: '', missing: 'No data', unreliable: `Unreliable (CV > ${CV_UNRELIABLE}%)` })[reliability(p, id).status] });
+        cols.push({ head: `${label} reliability`, get: p => ({ reliable: '', missing: missingNote(ind), unreliable: `Unreliable (CV > ${CV_UNRELIABLE}%)` })[reliability(p, id).status] });
       };
       pctCols('Children under 18, share of total population', 'pct_u18');
-      availableIndicators().forEach(ind => pctCols(ind.label, ind.id, ind.count_id));
+      availableIndicators().forEach(ind => pctCols(ind.label, ind.id, ind.count_id, ind));
       RACE_ROWS.forEach(r => pctCols(`${r.label}, share of children`, r.id));
       AGE_ROWS.filter(a => a.id !== 'pct_u5').forEach(a => pctCols(`${a.label}, share of children`, a.id));
       return cols;
@@ -787,13 +907,15 @@
       document.getElementById('profilePctKidsMoe').textContent = kidsMoe ? ` ${kidsMoe}` : '';
 
       document.getElementById('activeIndLabel').textContent = currentInd.label;
-      const activeUnreliable = reliability(props, currentInd.id).status === 'unreliable';
+      const activeStatus = reliability(props, currentInd.id).status;
+      const activeUnreliable = activeStatus !== 'reliable';
       document.getElementById('activeIndPct').textContent = activeUnreliable ? '—' : fmtPct(props[currentInd.id]);
       document.getElementById('activeIndMoe').textContent = activeUnreliable ? '' : fmtMoe(props, currentInd.id);
-      document.getElementById('activeIndRel').textContent = activeUnreliable ? SUPPRESSED_NOTE : '';
+      document.getElementById('activeIndRel').textContent = activeStatus === 'missing' ? missingNote(currentInd) : activeUnreliable ? SUPPRESSED_NOTE : '';
       document.getElementById('activeIndRel').classList.toggle('hidden', !activeUnreliable);
       document.getElementById('activeIndCount').textContent = (currentInd.count_id && !activeUnreliable) ? `(${fmtInt(props[currentInd.count_id])} children)` : '';
       document.getElementById('activeIndBench').innerHTML = benchmarkHTML(props, currentInd.id);
+      document.getElementById('activeIndDots').innerHTML = dotChartHTML(props, currentInd.id) + stripChartHTML(props, currentInd);
       document.getElementById('activeIndDef').textContent = currentInd.definition || '';
 
       const geoNoun = { counties: 'County', house: 'District', senate: 'District', schools: 'School District' }[currentGeo] || '';
@@ -856,9 +978,9 @@
       }).join('');
 
       document.getElementById('allIndicatorsList').innerHTML = availableIndicators().map(ind => {
-        const unreliable = reliability(props, ind.id).status === 'unreliable';
-        const value = unreliable
-          ? `<span class="text-xs font-semibold text-slate-600">${SUPPRESSED_NOTE}</span>`
+        const status = reliability(props, ind.id).status;
+        const value = status !== 'reliable'
+          ? `<span class="text-xs font-semibold text-slate-600">${esc(status === 'missing' ? missingNote(ind) : SUPPRESSED_NOTE)}</span>`
           : `<span class="font-bold text-slate-900">${fmtPct(props[ind.id])}</span>
              <span class="text-xs text-slate-600 ml-0.5">${fmtMoe(props, ind.id)}</span>`;
         return `
