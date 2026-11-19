@@ -181,7 +181,7 @@
           <p class="text-xs text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]">
             Note: Hispanic or Latino children may be of any race. Except for White (Non-Hispanic), race groups include Hispanic children of that race, so these shares overlap and may add up to more than 100%.
             &plusmn; values are 90% margins of error, calculated from published counts; the lighter band on each bar shows that range, and the black line marks the Texas statewide share. Gray bars are unreliable estimates (CV above 40%, or 0% with a nonzero margin of error).
-            Source: U.S. Census Bureau ACS 5-Year Estimates (Tables B01001B&ndash;I, S0101).
+            Source: U.S. Census Bureau, American Community Survey (ACS) 5-Year Estimates (Tables B01001B&ndash;I, S0101).
           </p>
         </div>
 
@@ -197,7 +197,7 @@
           </div>
           <p class="text-xs text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]">
             Share of all children under 18. &plusmn; values are 90% margins of error.
-            Source: U.S. Census Bureau ACS 5-Year Estimates (Table S0101).
+            Source: U.S. Census Bureau, American Community Survey (ACS) 5-Year Estimates (Table S0101).
           </p>
         </div>
         </section>
@@ -207,11 +207,11 @@
           <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2.5">All Core Indicators</h3>
           <div id="allIndicatorsList" class="divide-y divide-[#E5D7C3] text-xs"></div>
           <p class="text-xs text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]">
-            Note: &plusmn; values are 90% margins of error, in percentage points. They are published by the Census Bureau where available; otherwise they are calculated from published counts using Census Bureau formulas.
+            Note: &plusmn; values are 90% margins of error, in percentage points (ACS indicators only; the other sources publish none). They are published by the Census Bureau where available; otherwise they are calculated from published counts using Census Bureau formulas.
             Unreliable estimates are not shown and appear gray on the map: their coefficient of variation (CV, the standard error divided by the estimate) is above 40%, or the estimate is 0% with a nonzero margin of error. This is common in small counties and school districts.
           </p>
           <p class="text-xs text-slate-600 mt-1.5">
-            Texas and U.S. values are from the same ACS 5-Year tables. &#9650; higher or &#9660; lower than Texas means the difference is statistically significant at the 90% confidence level (the difference is larger than the combined margins of error, per Census Bureau guidance); &asymp; means it is not.
+            Texas and U.S. values are from the same sources unless noted. For ACS indicators, &#9650; higher or &#9660; lower than Texas means the difference is statistically significant at the 90% confidence level (the difference is larger than the combined margins of error, per Census Bureau guidance); &asymp; means it is not. For other sources, which publish no margins of error, &#9650; and &#9660; show only whether the value is above or below Texas.
           </p>
         </div>
       </div>
@@ -265,6 +265,8 @@
       if (!tx || reliability(props, id).status !== 'reliable') return null;
       const a = toNum(props[id]), b = toNum(tx[id]);
       if (a === null || b === null) return null;
+      // Sources without MOEs: direction only, no significance test
+      if (props[`${id}_moe`] === undefined) return a > b ? 'higher' : a < b ? 'lower' : 'same';
       const ma = toNum(props[`${id}_moe`]) ?? 0, mb = toNum(tx[`${id}_moe`]) ?? 0;
       if (Math.abs(a - b) <= Math.sqrt(ma * ma + mb * mb)) return 'similar';
       return a > b ? 'higher' : 'lower';
@@ -272,7 +274,8 @@
     const COMPARE_BADGE = {
       higher:  { icon: '▲', text: 'Higher than Texas' },
       lower:   { icon: '▼', text: 'Lower than Texas' },
-      similar: { icon: '≈', text: 'Not significantly different from Texas' }
+      similar: { icon: '≈', text: 'Not significantly different from Texas' },
+      same:    { icon: '=', text: 'Same as Texas' }
     };
     // "Texas 19.0% · U.S. 16.0%" plus the comparison badge; empty when benchmarks are unavailable
     function benchmarkHTML(props, id, { compact = false } = {}) {
@@ -283,9 +286,10 @@
       if (tx !== null) parts.push(`Texas ${fmtPct(tx)}`);
       if (us !== null) parts.push(`U.S. ${fmtPct(us)}`);
       const cmp = compareToTexas(props, id);
+      const tip = props[`${id}_moe`] === undefined ? 'No margin of error published; not tested for statistical significance' : '90% confidence level';
       const badge = cmp ? (compact
-        ? `<span class="font-semibold text-slate-700" title="${COMPARE_BADGE[cmp].text} (90% confidence)">${COMPARE_BADGE[cmp].icon} ${cmp === 'similar' ? 'similar to Texas' : cmp + ' than Texas'}</span>`
-        : `<span class="inline-block font-semibold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5" title="90% confidence level">${COMPARE_BADGE[cmp].icon} ${COMPARE_BADGE[cmp].text}</span>`) : '';
+        ? `<span class="font-semibold text-slate-700" title="${COMPARE_BADGE[cmp].text} (${tip})">${COMPARE_BADGE[cmp].icon} ${({ similar: 'similar to Texas', same: 'same as Texas' })[cmp] || cmp + ' than Texas'}</span>`
+        : `<span class="inline-block font-semibold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5" title="${tip}">${COMPARE_BADGE[cmp].icon} ${COMPARE_BADGE[cmp].text}</span>`) : '';
       return compact
         ? `<p class="text-xs text-slate-600 mt-0.5">${parts.join(' · ')}${badge ? ' · ' + badge : ''}</p>`
         : `<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-700 mt-2"><span>${parts.join(' · ')}</span>${badge}</div>`;
@@ -361,13 +365,14 @@
         { label: 'This area', v: unreliable ? null : toNum(props[id]), m: toNum(props[`${id}_moe`]) ?? 0, color: '#0f766e', bold: true },
         { label: 'Texas', v: toNum(benchmarks.texas?.[id]), m: toNum(benchmarks.texas?.[`${id}_moe`]) ?? 0, color: '#0f172a' },
         { label: 'U.S.', v: toNum(benchmarks.us?.[id]), m: toNum(benchmarks.us?.[`${id}_moe`]) ?? 0, color: '#64748b' }
-      ];
+      ].filter((r, i) => i === 0 || r.v !== null);
       const shown = rows.filter(r => r.v !== null);
       if (shown.length < 2) return '';
-      // Axis spans every whisker, padded and rounded out to evenly spaced ticks
-      const span = Math.min(...shown.map(r => r.v - r.m)), spanHi = Math.max(...shown.map(r => r.v + r.m));
-      const pad = Math.max((spanHi - span) * 0.15, 1);
-      const { lo, hi, step } = niceAxis(span - pad, spanHi + pad);
+      // Same axis for every area of an indicator: the range of all reliable areas in this geography, plus Texas and U.S.
+      const vals = (currentGeoJSON?.features || []).map(f => f.properties)
+        .filter(p => reliability(p, id).status === 'reliable').map(p => toNum(p[id]))
+        .concat(shown.map(r => r.v));
+      const { lo, hi, step } = niceAxis(Math.min(...vals), Math.max(...vals));
       const W = 300, L = 62, R = 286, rowH = 22, top = 8, H = top + rows.length * rowH + 18;
       const x = (v) => L + (v - lo) / (hi - lo) * (R - L);
       let svg = '';
@@ -391,17 +396,21 @@
         svg += `<circle cx="${x(r.v)}" cy="${y}" r="${r.bold ? 5 : 4}" fill="${r.color}" stroke="#fff" stroke-width="1.5"><title>${r.label}: ${fmtPct(r.v)}${r.m ? ` ± ${r.m.toFixed(1)}` : ''}</title></circle>`;
       });
       return `<svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" role="img" aria-label="${esc(currentInd.label)}: this area compared with Texas and the U.S., with 90% margins of error">${svg}</svg>
-        <p class="text-[11px] text-slate-600 mt-1">Lines show 90% margins of error. Texas and U.S. ranges are often too narrow to see.</p>`;
+        ${shown.some(r => r.m > 0) ? '<p class="text-[11px] text-slate-600 mt-1">Lines show 90% margins of error. Texas and U.S. ranges are often too narrow to see.</p>' : ''}
+        ${currentInd.us_note && rows.some(r => r.label === 'U.S.') ? `<p class="text-[11px] text-slate-600 mt-1">${esc(currentInd.us_note)}</p>` : ''}`;
     }
 
-    // ---- Shareable links: #<geography>/<indicator id>/<GEOID> ----
+    // ---- Shareable links: #<geography>/<indicator slug>/<GEOID> ----
+    // Links use each indicator's "slug" from indicators.json, so variables can be renamed without breaking saved links.
+    // Older links that used the variable id still resolve.
     const GEO_SLUGS = ['counties', 'house', 'senate', 'schools'];
+    const matchesLink = (i, key) => key && (i.slug === key || i.id === key);
     function parseHash() {
       const [geo, ind, geoid] = decodeURIComponent(location.hash.replace(/^#/, '')).split('/');
       return { geo: GEO_SLUGS.includes(geo) ? geo : null, ind: ind || null, geoid: geoid || null };
     }
     function hashFor() {
-      const parts = [currentGeo, currentInd ? currentInd.id : ''];
+      const parts = [currentGeo, currentInd ? (currentInd.slug || currentInd.id) : ''];
       if (selectedFeature && selectedFeature.GEOID) parts.push(selectedFeature.GEOID);
       return '#' + parts.map(encodeURIComponent).join('/');
     }
@@ -473,7 +482,7 @@
       const start = parseHash();
       if (start.geo) currentGeo = start.geo;
       document.getElementById('geoSelect').value = currentGeo;
-      currentInd = availableIndicators().find(i => i.id === start.ind)
+      currentInd = availableIndicators().find(i => matchesLink(i, start.ind))
         || indicators.find(i => i.id === 'pct_pov') || indicators[0];
 
       const select = document.getElementById('indicatorSelect');
@@ -500,6 +509,7 @@
 
       select.addEventListener('change', (e) => {
         currentInd = indicators.find(i => i.id === e.target.value);
+        populateGeoSelect();
         updateChoropleth();
         if (selectedFeature) renderSidebar(selectedFeature);
         writeHash();
@@ -553,10 +563,11 @@
       window.addEventListener('hashchange', async () => {
         const s = parseHash();
         if (s.geo && s.geo !== currentGeo) await setGeography(s.geo, { keepLocation: false });
-        const ind = availableIndicators().find(i => i.id === s.ind);
+        const ind = availableIndicators().find(i => matchesLink(i, s.ind));
         if (ind && ind !== currentInd) {
           currentInd = ind;
           document.getElementById('indicatorSelect').value = ind.id;
+          populateGeoSelect();
           updateChoropleth();
         }
         if (s.geoid && (!selectedFeature || selectedFeature.GEOID !== s.geoid)) selectByGeoid(s.geoid, { zoom: true });
@@ -607,6 +618,25 @@
         select.appendChild(group);
       });
       if (currentInd) select.value = currentInd.id;
+      populateGeoSelect();
+    }
+
+    // (Re)build the geography dropdown so it lists only the layers that have data for the current indicator
+    // (e.g., a county-only indicator shows just "Texas Counties"). Options are rebuilt rather than hidden,
+    // since some browsers ignore the hidden attribute on <option>.
+    let GEO_OPTIONS = null;
+    function populateGeoSelect() {
+      const select = document.getElementById('geoSelect');
+      if (!GEO_OPTIONS) GEO_OPTIONS = [...select.options].map(o => ({ value: o.value, text: o.textContent }));
+      const geos = currentInd && Array.isArray(currentInd.geographies) ? currentInd.geographies : null;
+      select.innerHTML = '';
+      GEO_OPTIONS.filter(o => !geos || geos.includes(o.value) || o.value === currentGeo).forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.value;
+        opt.textContent = o.text;
+        select.appendChild(opt);
+      });
+      select.value = currentGeo;
     }
 
     // Choropleth color, with missing and unreliable estimates (same rule as reliability() above) shown in gray
@@ -817,8 +847,8 @@
     // ---- CSV download: the selected area or every area in the geography, plus Texas and U.S. rows ----
     const slugify = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const RACE_ROWS = [
-      { label: 'Hispanic or Latino children', id: 'pct_Hispu18' },
-      { label: 'White (Non-Hispanic) children', id: 'pct_whiteNHu18' },
+      { label: 'Hispanic or Latino children', id: 'pct_hispu18' },
+      { label: 'White (Non-Hispanic) children', id: 'pct_whitenhu18' },
       { label: 'Black or African American children', id: 'pct_blacku18' },
       { label: 'Asian children', id: 'pct_asianu18' },
       { label: 'Two or More Races children', id: 'pct_two_moreu18' },
@@ -842,6 +872,7 @@
         cols.push({ head: `${label} (%)`, get: p => p[id] });
         cols.push({ head: `${label} (%) 90% MOE`, get: p => p[`${id}_moe`] });
         if (countId) cols.push({ head: `${label} (count)`, get: p => p[countId] });
+        if (ind?.denom_id) cols.push({ head: `${label} (${ind.denom_label || 'denominator'})`, get: p => p[ind.denom_id] });
         cols.push({ head: `${label} reliability`, get: p => ({ reliable: '', missing: missingNote(ind), unreliable: `Unreliable (CV > ${CV_UNRELIABLE}%)` })[reliability(p, id).status] });
       };
       pctCols('Children under 18, share of total population', 'pct_u18');
@@ -895,6 +926,14 @@
         [tx !== null ? `Texas ${fmtPct(tx)}` : '', us !== null ? `U.S. ${fmtPct(us)}` : ''].filter(Boolean).join(' · ');
     }
 
+    // "(1,234 children)" or, with denom_id, "(544 graduates of 548 students)"
+    function countText(props, ind) {
+      const n = ind.count_id ? toNum(props[ind.count_id]) : null;
+      if (n === null) return '';
+      const d = ind.denom_id ? toNum(props[ind.denom_id]) : null;
+      return `(${fmtInt(n)} ${ind.count_label || 'children'}${d !== null ? ` of ${fmtInt(d)} ${ind.denom_label || ''}` : ''})`.replace(' )', ')');
+    }
+
     function renderSidebar(props) {
       document.getElementById('sidebarEmpty').classList.add('hidden');
       document.getElementById('sidebarContent').classList.remove('hidden');
@@ -913,10 +952,16 @@
       document.getElementById('activeIndMoe').textContent = activeUnreliable ? '' : fmtMoe(props, currentInd.id);
       document.getElementById('activeIndRel').textContent = activeStatus === 'missing' ? missingNote(currentInd) : activeUnreliable ? SUPPRESSED_NOTE : '';
       document.getElementById('activeIndRel').classList.toggle('hidden', !activeUnreliable);
-      document.getElementById('activeIndCount').textContent = (currentInd.count_id && !activeUnreliable) ? `(${fmtInt(props[currentInd.count_id])} children)` : '';
+      document.getElementById('activeIndCount').textContent = activeUnreliable ? '' : countText(props, currentInd);
       document.getElementById('activeIndBench').innerHTML = benchmarkHTML(props, currentInd.id);
       document.getElementById('activeIndDots').innerHTML = dotChartHTML(props, currentInd.id) + stripChartHTML(props, currentInd);
-      document.getElementById('activeIndDef').textContent = currentInd.definition || '';
+      const defEl = document.getElementById('activeIndDef');
+      defEl.textContent = '';
+      if (currentInd.definition) {
+        const defLabel = document.createElement('strong');
+        defLabel.textContent = 'Definition: ';
+        defEl.append(defLabel, currentInd.definition);
+      }
 
       const geoNoun = { counties: 'County', house: 'District', senate: 'District', schools: 'School District' }[currentGeo] || '';
       document.getElementById('demographicsHeading').textContent = `${geoNoun} Demographics`;
@@ -990,7 +1035,7 @@
             <span class="whitespace-nowrap">${value}</span>
           </div>
           ${benchmarkHTML(props, ind.id, { compact: true })}
-          ${ind.definition ? `<p class="text-xs leading-snug text-slate-600 mt-0.5 pr-10">${ind.definition}</p>` : ''}
+          ${ind.definition ? `<p class="text-xs leading-snug text-slate-600 mt-0.5 pr-10"><strong>Definition:</strong> ${ind.definition}</p>` : ''}
         </div>
       `;
       }).join('');

@@ -21,8 +21,8 @@ race_vars_u18 <- as.vector(outer(race_tables, u18_cells, function(t, c) paste0("
 # For each group, returns the under-18 count (<group>_u18) and the 90% MOE of that count (<group>_u18_moe),
 # combining the 8 age-by-sex cells (and, for "other_all", three race tables) with moe_add() (defined below).
 # "other_all" = AIAN + NHPI + Some Other Race, the combined group shown in the sidebar.
-race_groups <- list(black = "B", AIAN = "C", asian = "D", NHPI = "E", other = "F",
-                    two_more = "G", whiteNH = "H", hisp = "I", other_all = c("C", "E", "F"))
+race_groups <- list(black = "B", aian = "C", asian = "D", nhpi = "E", other = "F",
+                    two_more = "G", whitenh = "H", hisp = "I", other_all = c("C", "E", "F"))
 
 # Requested one race table at a time (8 variables each), with retries: one 64-variable request
 # often times out on the Census API (Cloudflare error 524)
@@ -129,9 +129,9 @@ pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry =
       occ_u18       = "S0901_C01_035", # Children in occupied housing units (tenure universe)
       ownocc_pct    = "S0901_C01_036", # PERCENT of children in owner-occupied homes (S0901 reports %, not a count)
       rent_pct      = "S0901_C01_037", # PERCENT of children in rented homes (S0901 reports %, not a count)
-      FB_boys       = "B05003_005",   # Foreign-born boys
-      FB_girls      = "B05003_016",   # Foreign-born girls
-      noHcov_u19    = "S2701_C04_011", # Under 19, uninsured
+      fb_boys       = "B05003_005",   # Foreign-born boys
+      fb_girls      = "B05003_016",   # Foreign-born girls
+      nohcov_u19    = "S2701_C04_011", # Under 19, uninsured
       total_u19     = "S2701_C01_011", # Civilian noninstitutionalized under 19 (insurance universe)
       snap_hh_kids  = "B22002_003",   # HHs receiving SNAP with children under 18 (New!)
       nosnap_hh_kids = "B22002_016",  # HHs NOT receiving SNAP with children under 18
@@ -175,8 +175,8 @@ pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry =
       pct_ownocc_moe = pub_moe(ownocc_pctE, ownocc_pctM), # Published MOE (not currently displayed)
       pct_rent     = rent_pctE,
       pct_rent_moe = pub_moe(rent_pctE, rent_pctM),       # Published MOE (not currently displayed)
-      FB_u18       = FB_boysE + FB_girlsE,
-      noHcov_u19   = noHcov_u19E,
+      fb_u18       = fb_boysE + fb_girlsE,
+      nohcov_u19   = nohcov_u19E,
       total_u19    = total_u19E,
       snap_hh_kids = snap_hh_kidsE,
       tot_hh_kids  = snap_hh_kidsE + nosnap_hh_kidsE, # All HHs with children under 18
@@ -194,8 +194,8 @@ pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry =
       pct_u18_moe        = pub_moe(u18_pctE, u18_pctM),
       pct_pov            = pov_pctE,
       pct_pov_moe        = pub_moe(pov_pctE, pov_pctM),
-      pct_noHcov         = unins_pctE,
-      pct_noHcov_moe     = pub_moe(unins_pctE, unins_pctM),
+      pct_nohcov         = unins_pctE,
+      pct_nohcov_moe     = pub_moe(unins_pctE, unins_pctM),
       pct_dis            = dis_pctE,
       pct_dis_moe        = pub_moe(dis_pctE, dis_pctM),
       # Calculated 90% MOEs (percentage points) for indicators with no published percentage, named <indicator id>_moe
@@ -203,8 +203,8 @@ pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry =
                                    moe_add(list(snap_hh_kidsE, nosnap_hh_kidsE), list(snap_hh_kidsM, nosnap_hh_kidsM))),
       pct_u5_moe         = pct_moe(kids_u5E, kids_u18E, kids_u5M, kids_u18M),
       pct_lep_5to17_moe  = pct_moe(lep_5to17E, kids_5to17E, lep_5to17M, kids_5to17M),
-      pct_FB_u18_moe     = pct_moe(FB_boysE + FB_girlsE, kids_u18E,
-                                   moe_add(list(FB_boysE, FB_girlsE), list(FB_boysM, FB_girlsM)), kids_u18M),
+      pct_fb_u18_moe     = pct_moe(fb_boysE + fb_girlsE, kids_u18E,
+                                   moe_add(list(fb_boysE, fb_girlsE), list(fb_boysM, fb_girlsM)), kids_u18M),
       pct_single_par_moe = pct_moe(own_male_onlyE + own_fem_onlyE, own_kids_totE,
                                    moe_add(list(own_male_onlyE, own_fem_onlyE), list(own_male_onlyM, own_fem_onlyM)),
                                    own_kids_totM),
@@ -215,22 +215,22 @@ pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry =
     ) %>%
     left_join(race_df, by = c("GEOID", "NAME")) %>%
     mutate(
-      # pct_u18, pct_pov, pct_noHcov, and pct_dis are published percentages (set above), not calculated here
+      # pct_u18, pct_pov, pct_nohcov, and pct_dis are published percentages (set above), not calculated here
       pct_u5          = round((kids_u5 / kids_u18) * 100, 1),
       pct_blacku18    = round((black_u18 / kids_u18) * 100, 1),
-      pct_otheru18    = round(((AIAN_u18 + NHPI_u18 + other_u18) / kids_u18) * 100, 1),
+      pct_otheru18    = round(((aian_u18 + nhpi_u18 + other_u18) / kids_u18) * 100, 1),
       pct_asianu18    = round((asian_u18 / kids_u18) * 100, 1),
       pct_two_moreu18 = round((two_more_u18 / kids_u18) * 100, 1),
-      pct_whiteNHu18  = round((whiteNH_u18 / kids_u18) * 100, 1),
-      pct_Hispu18     = round((hisp_u18 / kids_u18) * 100, 1),
+      pct_whitenhu18  = round((whitenh_u18 / kids_u18) * 100, 1),
+      pct_hispu18     = round((hisp_u18 / kids_u18) * 100, 1),
       # Calculated 90% MOEs for the race/ethnicity shares (sidebar bar chart)
       pct_blacku18_moe    = pct_moe(black_u18, kids_u18, black_u18_moe, kids_u18_moe),
       pct_otheru18_moe    = pct_moe(other_all_u18, kids_u18, other_all_u18_moe, kids_u18_moe),
       pct_asianu18_moe    = pct_moe(asian_u18, kids_u18, asian_u18_moe, kids_u18_moe),
       pct_two_moreu18_moe = pct_moe(two_more_u18, kids_u18, two_more_u18_moe, kids_u18_moe),
-      pct_whiteNHu18_moe  = pct_moe(whiteNH_u18, kids_u18, whiteNH_u18_moe, kids_u18_moe),
-      pct_Hispu18_moe     = pct_moe(hisp_u18, kids_u18, hisp_u18_moe, kids_u18_moe),
-      pct_FB_u18      = round((FB_u18 / kids_u18) * 100, 1),
+      pct_whitenhu18_moe  = pct_moe(whitenh_u18, kids_u18, whitenh_u18_moe, kids_u18_moe),
+      pct_hispu18_moe     = pct_moe(hisp_u18, kids_u18, hisp_u18_moe, kids_u18_moe),
+      pct_fb_u18      = round((fb_u18 / kids_u18) * 100, 1),
       pct_snap_hh     = round((snap_hh_kids / tot_hh_kids) * 100, 1),
       pct_no_comp     = round((u18_no_comp / u18_comp_tot) * 100, 1),
       pct_no_net      = round((u18_no_net / u18_comp_tot) * 100, 1),
@@ -241,16 +241,21 @@ pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry =
   if (inherits(core_df, "sf")) st_transform(core_df, 4326) else core_df # Standard WGS84 for MapLibre web maps
 }
 
+# Non-ACS data from clean_external.R: data-prep/clean_data/*_<slug>.csv, joined by GEOID
+merge_external <- function(df, slug) {
+  for (f in list.files("data-prep/clean_data", paste0("_", slug, "\\.csv$"), full.names = TRUE)) {
+    ext <- read.csv(f, colClasses = c(GEOID = "character")) %>% select(-any_of("NAME"))
+    df <- left_join(select(df, -any_of(setdiff(names(ext), "GEOID"))), ext, by = "GEOID")
+  }
+  df
+}
+
 # 4. Substate Pull + Simplification + Export to GeoJSON
 export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
   message("Pulling ", file_slug, "...")
   core_df <- pull_indicators(geo_code, year = year, geometry = TRUE)
 
-  # OPTIONAL HOOK: Merge non-ACS CSV data (TEA STAAR, Feeding America, TX HHS) by GEOID!
-  # if (file.exists(paste0("data-prep/external_", file_slug, ".csv"))) {
-  #   ext_df <- read.csv(paste0("data-prep/external_", file_slug, ".csv"), colClasses = c(GEOID = "character"))
-  #   core_df <- left_join(core_df, ext_df, by = "GEOID")
-  # }
+  core_df <- merge_external(core_df, file_slug)
 
   # Simplify geometry to shrink file size by ~90% for instant loading on GitHub Pages
   simplified_sf <- ms_simplify(core_df, keep = 0.05, keep_shapes = TRUE)
@@ -265,8 +270,8 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
 # Written to docs/data/benchmarks.json as {"texas": {...}, "us": {...}} with the same field names as the map layers.
 export_benchmarks <- function(year = acs5_year) {
   message("Pulling Texas and U.S. comparison values...")
-  tx <- pull_indicators("state", year = year, state = "TX")
-  us <- pull_indicators("us", year = year, state = NULL)
+  tx <- merge_external(pull_indicators("state", year = year, state = "TX"), "counties")
+  us <- merge_external(pull_indicators("us", year = year, state = NULL), "counties")
   out <- list(texas = as.list(tx[1, ]), us = as.list(us[1, ]))
   write_json(out, "docs/data/benchmarks.json", auto_unbox = TRUE, digits = NA, na = "null", pretty = TRUE)
 }
