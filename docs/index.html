@@ -468,11 +468,15 @@
       goHome();
     }
 
+    // Config and data files are always revalidated with the server (a quick 304 when unchanged), so a browser never
+    // pairs a new indicators.json with an older cached map layer whose field names differ
+    const fetchFresh = (url) => fetch(url, { cache: 'no-cache' });
+
     async function initDashboard() {
       const [indRes, benchRes, placesRes] = await Promise.all([
-        fetch('./config/indicators.json'),
-        fetch('./data/benchmarks.json').catch(() => null),
-        fetch('./data/places.json').catch(() => null)
+        fetchFresh('./config/indicators.json'),
+        fetchFresh('./data/benchmarks.json').catch(() => null),
+        fetchFresh('./data/places.json').catch(() => null)
       ]);
       indicators = await indRes.json();
       benchmarks = (benchRes && benchRes.ok) ? await benchRes.json().catch(() => null) : null;
@@ -706,7 +710,7 @@
 
     async function loadGeoLayer(geoSlug) {
       const url = `./data/${geoSlug}.geojson`;
-      const res = await fetch(url);
+      const res = await fetchFresh(url);
       const data = await res.json();
       if (geoSlug !== currentGeo) return; // a newer geography was picked while this one was loading
       currentGeoJSON = data;
