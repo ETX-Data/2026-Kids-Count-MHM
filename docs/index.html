@@ -8,6 +8,14 @@
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <style>
+    /* Map hover tooltip: ignores the mouse so it never blocks the map or flickers */
+    .kc-tip { pointer-events: none; }
+    /* Home and Reset map buttons (same look as the zoom buttons) */
+    .kc-ctrl button { display: flex; align-items: center; justify-content: center; color: #334155; }
+    .kc-ctrl button:hover { color: #0f766e; }
+    .kc-tip .maplibregl-popup-content { padding: 8px 10px; border-radius: 8px; background: #fffdf8; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.2); }
+    .kc-tip.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: #fffdf8; }
+
     /* Print-friendly District Fact Sheet rules */
     @media print {
       body {
@@ -15,7 +23,7 @@
         overflow: visible !important;
         background: #ffffff !important;
       }
-      #map, #headerControls, #printBtn, #sidebarEmpty {
+      #map, #headerControls, #profileActions, #sidebarEmpty, #profileSearchNote {
         display: none !important;
       }
       header {
@@ -64,11 +72,13 @@
       </div>
 
       <!-- Search District / County / ISD -->
-      <div>
-        <label class="block text-[11px] font-semibold uppercase text-slate-600 mb-0.5">Search Location</label>
-        <input id="searchInput" list="geoList" type="text" placeholder="Type name or district #..." 
-               class="border border-[#D8C7AE] rounded-md px-3 py-1.5 text-sm bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-700 w-52" />
+      <div class="relative">
+        <label for="searchInput" class="block text-[11px] font-semibold uppercase text-slate-600 mb-0.5">Search Location</label>
+        <input id="searchInput" list="geoList" type="text" placeholder="Name, district #, city, or ZIP..." autocomplete="off"
+               class="border border-[#D8C7AE] rounded-md px-3 py-1.5 text-sm bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-700 w-60" />
         <datalist id="geoList"></datalist>
+        <!-- Search messages (e.g., ZIP not found) float below the input so the header does not shift -->
+        <p id="searchMsg" role="status" class="hidden absolute left-0 top-full mt-1 w-72 text-[11px] text-slate-700 bg-white border border-[#D8C7AE] rounded-md px-2 py-1 shadow-md z-30"></p>
       </div>
 
       <!-- Indicator Switcher -->
@@ -76,6 +86,15 @@
         <label class="block text-[11px] font-semibold uppercase text-slate-600 mb-0.5">Indicator</label>
         <select id="indicatorSelect" class="border border-[#D8C7AE] rounded-md px-3 py-1.5 text-sm font-medium bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-700 min-w-[260px]">
         </select>
+      </div>
+
+      <!-- Download every area in the current geography -->
+      <div>
+        <span class="block text-[11px] font-semibold uppercase text-slate-600 mb-0.5">Data</span>
+        <button id="csvAllBtn" type="button" title="Download all areas in this geography, plus Texas and U.S., as a CSV file"
+                class="bg-white hover:bg-teal-50 text-teal-800 border border-[#D8C7AE] rounded-md px-3 py-1.5 text-sm font-semibold shadow-sm transition">
+          Download All Data (CSV)
+        </button>
       </div>
     </div>
   </header>
@@ -94,7 +113,8 @@
           <span id="legendUnreliableSwatch" class="inline-block w-3 h-3 rounded-sm ring-1 ring-black/10 shrink-0"></span>
           <span id="legendUnreliableLabel"></span>
         </div>
-        <div id="legendSource" class="text-[10px] text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]"></div>
+        <div id="legendBench" class="text-[11px] font-semibold text-slate-700 mt-1.5"></div>
+        <div id="legendSource" class="text-xs text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]"></div>
       </div>
     </div>
 
@@ -109,16 +129,27 @@
           <div>
             <span id="profileGeoType" class="text-xs font-semibold uppercase tracking-wider text-teal-800"></span>
             <h2 id="profileName" class="text-xl font-bold text-slate-900 mt-0.5"></h2>
+            <p id="profileSearchNote" class="hidden text-[11px] text-teal-900 bg-teal-50 border border-teal-200 rounded px-2 py-1 mt-1.5"></p>
             <p class="text-xs text-slate-700 mt-1">
               Total Child Population (Under 18): <strong id="profileTotalKids" class="text-slate-900"></strong>
               (<span id="profilePctKids"></span>%<span id="profilePctKidsMoe"></span> of total population)
             </p>
           </div>
-          <!-- Print / Save PDF Button -->
-          <button id="printBtn" onclick="window.print()" title="Print or Save Profile as PDF"
-                  class="shrink-0 bg-white hover:bg-teal-50 text-teal-800 border border-[#D8C7AE] rounded-md px-2.5 py-1.5 text-xs font-semibold shadow-sm transition">
-            Print / PDF
-          </button>
+          <!-- Profile actions: Print / Save PDF, copy shareable link, download this area's data -->
+          <div id="profileActions" class="shrink-0 flex flex-col gap-1.5">
+            <button id="printBtn" type="button" onclick="window.print()" title="Print or Save Profile as PDF"
+                    class="bg-white hover:bg-teal-50 text-teal-800 border border-[#D8C7AE] rounded-md px-2.5 py-1.5 text-xs font-semibold shadow-sm transition">
+              Print / PDF
+            </button>
+            <button id="copyLinkBtn" type="button" title="Copy a link that opens the map to this area and indicator"
+                    class="bg-white hover:bg-teal-50 text-teal-800 border border-[#D8C7AE] rounded-md px-2.5 py-1.5 text-xs font-semibold shadow-sm transition">
+              Copy Link
+            </button>
+            <button id="csvPlaceBtn" type="button" title="Download this area's data, plus Texas and U.S., as a CSV file"
+                    class="bg-white hover:bg-teal-50 text-teal-800 border border-[#D8C7AE] rounded-md px-2.5 py-1.5 text-xs font-semibold shadow-sm transition">
+              This Area (CSV)
+            </button>
+          </div>
         </div>
 
         <!-- Highlighted Active Indicator Card -->
@@ -130,7 +161,8 @@
             <span id="activeIndCount" class="text-xs text-teal-700"></span>
           </div>
           <p id="activeIndRel" class="hidden text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-300 rounded px-2 py-1 mt-2"></p>
-          <p id="activeIndDef"class="text-[10px] leading-snug text-slate-600 mt-1.5"></p>
+          <div id="activeIndBench"></div>
+          <p id="activeIndDef"class="text-xs leading-snug text-slate-600 mt-1.5"></p>
         </div>
 
         <!-- Demographics: Race/Ethnicity Breakdown + Age Groups -->
@@ -138,10 +170,16 @@
         <h2 id="demographicsHeading" class="text-sm font-bold text-slate-900 border-b-2 border-teal-700 pb-1 -mb-1">County Demographics</h2>
         <div>
           <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2.5">Child Race & Ethnicity (Under 18)</h3>
-          <div id="raceBreakdown" class="space-y-2 text-xs"></div>
-          <p class="text-[10px] text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]">
+          <!-- Key for the bar marks -->
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-700 mb-2.5">
+            <span class="flex items-center gap-1"><span class="inline-block w-4 h-1.5 rounded-sm bg-teal-700"></span>This area</span>
+            <span class="flex items-center gap-1"><span class="inline-block w-4 h-1.5 rounded-sm bg-teal-700/35"></span>Margin of error</span>
+            <span class="flex items-center gap-1"><span class="inline-block w-0.5 h-3 bg-slate-900"></span>Texas</span>
+          </div>
+          <div id="raceBreakdown" class="space-y-2.5 text-xs"></div>
+          <p class="text-xs text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]">
             Note: Hispanic or Latino children may be of any race. Except for White (Non-Hispanic), race groups include Hispanic children of that race, so these shares overlap and may add up to more than 100%.
-            &plusmn; values are 90% margins of error, calculated from published counts; the lighter band on each bar shows that range. Gray bars are unreliable estimates (CV above 40%, or 0% with a nonzero margin of error).
+            &plusmn; values are 90% margins of error, calculated from published counts; the lighter band on each bar shows that range, and the black line marks the Texas statewide share. Gray bars are unreliable estimates (CV above 40%, or 0% with a nonzero margin of error).
             Source: U.S. Census Bureau ACS 5-Year Estimates (Tables B01001B&ndash;I, S0101).
           </p>
         </div>
@@ -156,7 +194,7 @@
             <svg id="agePie" viewBox="-1 -1 2 2" class="w-28 h-28 shrink-0 -rotate-90" role="img" aria-label="Children by age group"></svg>
             <div id="ageLegend" class="flex-1 space-y-1.5 text-xs"></div>
           </div>
-          <p class="text-[10px] text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]">
+          <p class="text-xs text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]">
             Share of all children under 18. &plusmn; values are 90% margins of error.
             Source: U.S. Census Bureau ACS 5-Year Estimates (Table S0101).
           </p>
@@ -167,9 +205,12 @@
         <div>
           <h3 class="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2.5">All Core Indicators</h3>
           <div id="allIndicatorsList" class="divide-y divide-[#E5D7C3] text-xs"></div>
-          <p class="text-[10px] text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]">
+          <p class="text-xs text-slate-600 mt-2 pt-1.5 border-t border-[#E5D7C3]">
             Note: &plusmn; values are 90% margins of error, in percentage points. They are published by the Census Bureau where available; otherwise they are calculated from published counts using Census Bureau formulas.
             Unreliable estimates are not shown and appear gray on the map: their coefficient of variation (CV, the standard error divided by the estimate) is above 40%, or the estimate is 0% with a nonzero margin of error. This is common in small counties and school districts.
+          </p>
+          <p class="text-xs text-slate-600 mt-1.5">
+            Texas and U.S. values are from the same ACS 5-Year tables. &#9650; higher or &#9660; lower than Texas means the difference is statistically significant at the 90% confidence level (the difference is larger than the combined margins of error, per Census Bureau guidance); &asymp; means it is not.
           </p>
         </div>
       </div>
@@ -178,6 +219,9 @@
 
   <script>
     let map, indicators = [], currentGeo = 'counties', currentInd = null, selectedFeature = null, currentGeoJSON = null;
+    let benchmarks = null;      // Texas and U.S. values (data/benchmarks.json), same field names as the map layers
+    let searchPlaces = null;    // City and ZIP lookup (data/places.json): { places: [[label, lon, lat]], zips: { "78701": [lon, lat] } }
+    let lastLocation = null;    // Last city/ZIP search, re-applied when the geography changes
     const fmtInt = (n) => (n !== null && n !== undefined && !isNaN(n)) ? Number(n).toLocaleString() : 'N/A';
     const fmtPct = (n) => (n !== null && n !== undefined && !isNaN(n)) ? `${Number(n).toFixed(1)}%` : 'N/A';
     // 90% margin of error stored as "<indicator id>_moe" (percentage points); blank when unavailable
@@ -185,6 +229,8 @@
       const m = props[`${id}_moe`];
       return (m !== null && m !== undefined && m !== '' && !isNaN(m) && !isNaN(props[id])) ? `± ${Number(m).toFixed(1)}` : '';
     };
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const shortName = (name) => String(name ?? '').replace(/[,;] Texas$/, '');
 
     // Reliability flag. CV = standard error / estimate, where standard error = MOE / 1.645 (Census Bureau definition).
     // Estimates with a CV above 40% are suppressed and grayed out. 40% is Esri's cutoff for "low reliability"
@@ -206,11 +252,121 @@
     // Unreliable estimates are suppressed: no value, margin of error, or count is shown
     const SUPPRESSED_NOTE = 'Not shown: estimate is unreliable';
 
+    // ---- Texas / U.S. comparisons ----
+    // Compares an area with Texas using the Census Bureau's test for a difference between two ACS estimates at
+    // the 90% confidence level: the difference is statistically significant when |a - b| > sqrt(MOE_a^2 + MOE_b^2).
+    function compareToTexas(props, id) {
+      const tx = benchmarks && benchmarks.texas;
+      if (!tx || reliability(props, id).status !== 'reliable') return null;
+      const a = toNum(props[id]), b = toNum(tx[id]);
+      if (a === null || b === null) return null;
+      const ma = toNum(props[`${id}_moe`]) ?? 0, mb = toNum(tx[`${id}_moe`]) ?? 0;
+      if (Math.abs(a - b) <= Math.sqrt(ma * ma + mb * mb)) return 'similar';
+      return a > b ? 'higher' : 'lower';
+    }
+    const COMPARE_BADGE = {
+      higher:  { icon: '▲', text: 'Higher than Texas' },
+      lower:   { icon: '▼', text: 'Lower than Texas' },
+      similar: { icon: '≈', text: 'Not significantly different from Texas' }
+    };
+    // "Texas 19.0% · U.S. 16.0%" plus the comparison badge; empty when benchmarks are unavailable
+    function benchmarkHTML(props, id, { compact = false } = {}) {
+      if (!benchmarks) return '';
+      const tx = toNum(benchmarks.texas?.[id]), us = toNum(benchmarks.us?.[id]);
+      if (tx === null && us === null) return '';
+      const parts = [];
+      if (tx !== null) parts.push(`Texas ${fmtPct(tx)}`);
+      if (us !== null) parts.push(`U.S. ${fmtPct(us)}`);
+      const cmp = compareToTexas(props, id);
+      const badge = cmp ? (compact
+        ? `<span class="font-semibold text-slate-700" title="${COMPARE_BADGE[cmp].text} (90% confidence)">${COMPARE_BADGE[cmp].icon} ${cmp === 'similar' ? 'similar to Texas' : cmp + ' than Texas'}</span>`
+        : `<span class="inline-block font-semibold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5" title="90% confidence level">${COMPARE_BADGE[cmp].icon} ${COMPARE_BADGE[cmp].text}</span>`) : '';
+      return compact
+        ? `<p class="text-xs text-slate-600 mt-0.5">${parts.join(' · ')}${badge ? ' · ' + badge : ''}</p>`
+        : `<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-700 mt-2"><span>${parts.join(' · ')}</span>${badge}</div>`;
+    }
+
+    // ---- Shareable links: #<geography>/<indicator id>/<GEOID> ----
+    const GEO_SLUGS = ['counties', 'house', 'senate', 'schools'];
+    function parseHash() {
+      const [geo, ind, geoid] = decodeURIComponent(location.hash.replace(/^#/, '')).split('/');
+      return { geo: GEO_SLUGS.includes(geo) ? geo : null, ind: ind || null, geoid: geoid || null };
+    }
+    function hashFor() {
+      const parts = [currentGeo, currentInd ? currentInd.id : ''];
+      if (selectedFeature && selectedFeature.GEOID) parts.push(selectedFeature.GEOID);
+      return '#' + parts.map(encodeURIComponent).join('/');
+    }
+    function writeHash() {
+      const h = hashFor();
+      if (location.hash !== h) history.replaceState(null, '', h); // replaceState does not fire hashchange
+    }
+
+    // ---- Home (full Texas view) and Reset (start over) map buttons ----
+    const HOME_VIEW = { center: [-99.3, 31.2], zoom: 5.3 };
+    const DEFAULT_GEO = 'counties', DEFAULT_IND = 'pct_pov';
+    const ICON_HOME = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>';
+    const ICON_RESET = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/></svg>';
+    class HomeResetControl {
+      onAdd() {
+        this._el = document.createElement('div');
+        this._el.className = 'maplibregl-ctrl maplibregl-ctrl-group kc-ctrl';
+        const button = (title, icon, onClick) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.title = title;
+          b.setAttribute('aria-label', title);
+          b.innerHTML = icon;
+          b.addEventListener('click', onClick);
+          this._el.appendChild(b);
+        };
+        button('Zoom out to all of Texas', ICON_HOME, goHome);
+        button('Reset the map (clear selection, search, and choices)', ICON_RESET, resetDashboard);
+        return this._el;
+      }
+      onRemove() { this._el.remove(); }
+    }
+    function goHome() {
+      map.easeTo({ center: HOME_VIEW.center, zoom: HOME_VIEW.zoom, bearing: 0, pitch: 0, duration: 800 });
+    }
+    // Back to the first-load state: counties, child poverty, nothing selected, full Texas view
+    async function resetDashboard() {
+      lastLocation = null;
+      hideSearchMsg();
+      document.getElementById('profileSearchNote').classList.add('hidden');
+      currentInd = indicators.find(i => i.id === DEFAULT_IND) || indicators[0];
+      if (currentGeo !== DEFAULT_GEO) {
+        await setGeography(DEFAULT_GEO, { keepLocation: false });
+      } else {
+        selectedFeature = null;
+        map.setFilter('poly-highlight', ['==', 'GEOID', '']);
+        document.getElementById('searchInput').value = '';
+        document.getElementById('sidebarEmpty').classList.remove('hidden');
+        document.getElementById('sidebarContent').classList.add('hidden');
+        populateIndicatorSelect();
+        updateChoropleth();
+        writeHash();
+      }
+      document.querySelector('aside').scrollTop = 0;
+      goHome();
+    }
+
     async function initDashboard() {
-      const res = await fetch('./config/indicators.json');
-      indicators = await res.json();
-      // Map shown on first load; dropdown categories follow their order in indicators.json
-      currentInd = indicators.find(i => i.id === 'pct_pov') || indicators[0];
+      const [indRes, benchRes, placesRes] = await Promise.all([
+        fetch('./config/indicators.json'),
+        fetch('./data/benchmarks.json').catch(() => null),
+        fetch('./data/places.json').catch(() => null)
+      ]);
+      indicators = await indRes.json();
+      benchmarks = (benchRes && benchRes.ok) ? await benchRes.json().catch(() => null) : null;
+      searchPlaces = (placesRes && placesRes.ok) ? await placesRes.json().catch(() => null) : null;
+
+      // Map shown on first load (unless a shared link says otherwise); dropdown categories follow indicators.json
+      const start = parseHash();
+      if (start.geo) currentGeo = start.geo;
+      document.getElementById('geoSelect').value = currentGeo;
+      currentInd = availableIndicators().find(i => i.id === start.ind)
+        || indicators.find(i => i.id === 'pct_pov') || indicators[0];
 
       const select = document.getElementById('indicatorSelect');
       populateIndicatorSelect();
@@ -219,32 +375,29 @@
       map = new maplibregl.Map({
         container: 'map',
         style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-        center: [-99.3, 31.2],
-        zoom: 5.3
+        center: HOME_VIEW.center,
+        zoom: HOME_VIEW.zoom
       });
       map.addControl(new maplibregl.NavigationControl(), 'top-left');
+      map.addControl(new HomeResetControl(), 'top-left');
 
-      map.on('load', () => {
-        loadGeoLayer(currentGeo);
+      map.on('load', async () => {
+        registerMapHandlers();
+        await loadGeoLayer(currentGeo);
+        selectByGeoid(start.geoid, { zoom: true });
+        writeHash();
       });
 
-      document.getElementById('geoSelect').addEventListener('change', (e) => {
-        currentGeo = e.target.value;
-        selectedFeature = null;
-        document.getElementById('searchInput').value = '';
-        document.getElementById('sidebarEmpty').classList.remove('hidden');
-        document.getElementById('sidebarContent').classList.add('hidden');
-        populateIndicatorSelect();
-        loadGeoLayer(currentGeo);
-      });
+      document.getElementById('geoSelect').addEventListener('change', (e) => setGeography(e.target.value));
 
       select.addEventListener('change', (e) => {
         currentInd = indicators.find(i => i.id === e.target.value);
         updateChoropleth();
         if (selectedFeature) renderSidebar(selectedFeature);
+        writeHash();
       });
 
-      // Search Bar Handler
+      // Search: an area name in the current geography, a Texas city or community, or a 5-digit ZIP code
       document.getElementById('searchInput').addEventListener('input', (e) => {
         const val = e.target.value.trim();
         if (!currentGeoJSON || !val) return;
@@ -252,9 +405,59 @@
           f => f.properties.NAME && f.properties.NAME.toLowerCase() === val.toLowerCase()
         );
         if (match) {
-          selectAndZoomToFeature(match);
+          lastLocation = null;
+          selectFeature(match, { zoom: true });
+          return;
         }
+        if (!searchPlaces) return;
+        if (/^\d{5}$/.test(val)) {
+          const pt = searchPlaces.zips[val];
+          if (pt) locate({ lon: pt[0], lat: pt[1], label: `ZIP code ${val}` });
+          else showSearchMsg(`ZIP code ${val} was not found in Texas.`);
+          return;
+        }
+        const place = searchPlaces.places.find(p => p[0].toLowerCase() === val.toLowerCase());
+        if (place) locate({ lon: place[1], lat: place[2], label: place[0] });
       });
+
+      document.getElementById('copyLinkBtn').addEventListener('click', copyLink);
+      document.getElementById('csvPlaceBtn').addEventListener('click', () => {
+        if (selectedFeature) downloadCSV([selectedFeature], `${slugify(shortName(selectedFeature.NAME))}`);
+      });
+      document.getElementById('csvAllBtn').addEventListener('click', () => {
+        if (currentGeoJSON) downloadCSV(currentGeoJSON.features.map(f => f.properties), `all-${currentGeo}`);
+      });
+
+      // Pasting a different shared link into the same tab
+      window.addEventListener('hashchange', async () => {
+        const s = parseHash();
+        if (s.geo && s.geo !== currentGeo) await setGeography(s.geo, { keepLocation: false });
+        const ind = availableIndicators().find(i => i.id === s.ind);
+        if (ind && ind !== currentInd) {
+          currentInd = ind;
+          document.getElementById('indicatorSelect').value = ind.id;
+          updateChoropleth();
+        }
+        if (s.geoid && (!selectedFeature || selectedFeature.GEOID !== s.geoid)) selectByGeoid(s.geoid, { zoom: true });
+        else if (selectedFeature) renderSidebar(selectedFeature);
+        writeHash();
+      });
+    }
+
+    // Switch the map layer. A city/ZIP search is carried over to the new geography (e.g., find your county,
+    // then your House district); a clicked selection is cleared because areas do not line up across layers.
+    async function setGeography(geo, { keepLocation = true } = {}) {
+      currentGeo = geo;
+      document.getElementById('geoSelect').value = geo;
+      selectedFeature = null;
+      if (!keepLocation) lastLocation = null;
+      document.getElementById('searchInput').value = '';
+      document.getElementById('sidebarEmpty').classList.remove('hidden');
+      document.getElementById('sidebarContent').classList.add('hidden');
+      populateIndicatorSelect();
+      await loadGeoLayer(geo);
+      if (lastLocation) locate(lastLocation);
+      writeHash();
     }
 
     // Indicators available for a geography: omitting "geographies" in indicators.json means all layers
@@ -301,18 +504,68 @@
       ];
     }
 
+    // Click, hover, and cursor handlers are registered once: they are tied to the layer id, which stays the
+    // same when loadGeoLayer() swaps in a different geography
+    function registerMapHandlers() {
+      map.on('click', 'poly-fill', (e) => {
+        if (!e.features.length) return;
+        lastLocation = null;
+        // Use the full feature from the GeoJSON (rendered features can be clipped to map tiles)
+        const geoid = e.features[0].properties.GEOID;
+        const full = currentGeoJSON.features.find(f => f.properties.GEOID === geoid);
+        selectFeature(full || e.features[0], { zoom: false });
+      });
+
+      // Hover tooltip: area name and the current indicator's value, margin of error, and Texas value
+      const tip = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 14, maxWidth: '280px', className: 'kc-tip' });
+      let hoveredId = null;
+      map.on('mousemove', 'poly-fill', (e) => {
+        if (!e.features.length) return;
+        map.getCanvas().style.cursor = 'pointer';
+        const props = e.features[0].properties;
+        const id = `${props.GEOID}|${currentInd.id}`;
+        if (id !== hoveredId) {
+          tip.setHTML(tooltipHTML(props));
+          hoveredId = id;
+        }
+        tip.setLngLat(e.lngLat).addTo(map);
+      });
+      map.on('mouseleave', 'poly-fill', () => {
+        map.getCanvas().style.cursor = '';
+        tip.remove();
+        hoveredId = null;
+      });
+    }
+
+    function tooltipHTML(props) {
+      const rel = reliability(props, currentInd.id).status;
+      const value = rel === 'reliable'
+        ? `<span class="text-base font-extrabold text-teal-800">${fmtPct(props[currentInd.id])}</span>
+           <span class="text-[11px] font-semibold text-teal-700">${fmtMoe(props, currentInd.id)}</span>`
+        : `<span class="text-[11px] font-semibold text-slate-600">${rel === 'missing' ? 'No data' : 'Unreliable estimate (not shown)'}</span>`;
+      const tx = benchmarks ? toNum(benchmarks.texas?.[currentInd.id]) : null;
+      return `
+        <div class="text-xs text-slate-800">
+          <div class="font-bold text-slate-900 leading-snug">${esc(shortName(props.NAME))}</div>
+          <div class="text-xs text-slate-600 mt-0.5">${esc(currentInd.label)}</div>
+          <div class="mt-0.5">${value}</div>
+          ${tx !== null ? `<div class="text-xs text-slate-600">Texas: ${fmtPct(tx)}</div>` : ''}
+        </div>`;
+    }
+
     async function loadGeoLayer(geoSlug) {
       const url = `./data/${geoSlug}.geojson`;
       const res = await fetch(url);
-      currentGeoJSON = await res.json();
+      const data = await res.json();
+      if (geoSlug !== currentGeo) return; // a newer geography was picked while this one was loading
+      currentGeoJSON = data;
+      currentGeoJSON.features.forEach(f => { f.bbox = featureBBox(f); });
 
-      // Populate autocomplete search datalist
-      const dataList = document.getElementById('geoList');
-      dataList.innerHTML = currentGeoJSON.features
-        .map(f => f.properties.NAME)
-        .filter(Boolean)
-        .sort()
-        .map(name => `<option value="${name}"></option>`)
+      // Autocomplete: area names in this geography, then Texas cities and communities (ZIP codes are typed in full)
+      const names = currentGeoJSON.features.map(f => f.properties.NAME).filter(Boolean).sort();
+      const placeLabels = searchPlaces ? searchPlaces.places.map(p => p[0]) : [];
+      document.getElementById('geoList').innerHTML = [...names, ...placeLabels]
+        .map(name => `<option value="${esc(name)}"></option>`)
         .join('');
 
       if (map.getLayer('poly-highlight')) map.removeLayer('poly-highlight');
@@ -354,40 +607,149 @@
         filter: ['==', 'GEOID', '']
       });
 
-      map.on('click', 'poly-fill', (e) => {
-        if (e.features.length > 0) {
-          const clicked = e.features[0];
-          selectedFeature = clicked.properties;
-          document.getElementById('searchInput').value = selectedFeature.NAME || '';
-          map.setFilter('poly-highlight', ['==', 'GEOID', selectedFeature.GEOID || '']);
-          renderSidebar(selectedFeature);
-        }
-      });
-
-      map.on('mouseenter', 'poly-fill', () => map.getCanvas().style.cursor = 'pointer');
-      map.on('mouseleave', 'poly-fill', () => map.getCanvas().style.cursor = '');
-
       updateLegend();
     }
 
-    // Compute polygon bounding box and fly to searched feature
-    function selectAndZoomToFeature(feature) {
+    // Select an area (from a click, search, or shared link): highlight it, fill the sidebar, update the link
+    function selectFeature(feature, { zoom = false, note = '' } = {}) {
       selectedFeature = feature.properties;
-      renderSidebar(selectedFeature);
+      document.getElementById('searchInput').value = note ? document.getElementById('searchInput').value : (selectedFeature.NAME || '');
       map.setFilter('poly-highlight', ['==', 'GEOID', selectedFeature.GEOID || '']);
+      renderSidebar(selectedFeature);
+      const noteEl = document.getElementById('profileSearchNote');
+      noteEl.textContent = note;
+      noteEl.classList.toggle('hidden', !note);
+      writeHash();
+      if (zoom && feature.bbox) map.fitBounds(feature.bbox, { padding: 60, maxZoom: 10 });
+    }
 
-      const bounds = new maplibregl.LngLatBounds();
-      const extendCoords = (coords) => {
-        if (typeof coords[0] === 'number') {
-          bounds.extend(coords);
-        } else {
-          coords.forEach(extendCoords);
-        }
+    function selectByGeoid(geoid, opts) {
+      if (!geoid || !currentGeoJSON) return;
+      const f = currentGeoJSON.features.find(f => String(f.properties.GEOID) === String(geoid));
+      if (f) selectFeature(f, opts);
+    }
+
+    // ---- City and ZIP search: find the area containing the city's or ZIP code's Census internal point ----
+    function featureBBox(f) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      const walk = (c) => {
+        if (typeof c[0] === 'number') {
+          if (c[0] < minX) minX = c[0]; if (c[0] > maxX) maxX = c[0];
+          if (c[1] < minY) minY = c[1]; if (c[1] > maxY) maxY = c[1];
+        } else c.forEach(walk);
       };
-      if (feature.geometry && feature.geometry.coordinates) {
-        extendCoords(feature.geometry.coordinates);
-        map.fitBounds(bounds, { padding: 60, maxZoom: 10 });
+      if (f.geometry && f.geometry.coordinates) walk(f.geometry.coordinates);
+      return [minX, minY, maxX, maxY];
+    }
+    // Even-odd ray casting over every ring, so holes are handled
+    function pointInFeature(lon, lat, f) {
+      const g = f.geometry;
+      if (!g) return false;
+      const b = f.bbox;
+      if (lon < b[0] || lon > b[2] || lat < b[1] || lat > b[3]) return false;
+      const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+      let inside = false;
+      polys.forEach(rings => rings.forEach(ring => {
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const [xi, yi] = ring[i], [xj, yj] = ring[j];
+          if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+        }
+      }));
+      return inside;
+    }
+    function locate(loc) {
+      lastLocation = loc;
+      const geoNoun = { counties: 'county', house: 'Texas House district', senate: 'Texas Senate district', schools: 'unified school district' }[currentGeo];
+      const f = currentGeoJSON && currentGeoJSON.features.find(f => pointInFeature(loc.lon, loc.lat, f));
+      document.getElementById('searchInput').value = loc.label;
+      if (!f) {
+        showSearchMsg(`No ${geoNoun} was found at the center of ${loc.label}. Try another geography.`);
+        return;
       }
+      hideSearchMsg();
+      selectFeature(f, {
+        zoom: true,
+        note: `Showing the ${geoNoun} that contains the center of ${loc.label}. Places that cross boundaries may also be in other ${geoNoun.replace(/y$/, 'ie')}s.`
+      });
+    }
+    let searchMsgTimer = null;
+    function showSearchMsg(text) {
+      const el = document.getElementById('searchMsg');
+      el.textContent = text;
+      el.classList.remove('hidden');
+      clearTimeout(searchMsgTimer);
+      searchMsgTimer = setTimeout(hideSearchMsg, 6000);
+    }
+    function hideSearchMsg() { document.getElementById('searchMsg').classList.add('hidden'); }
+
+    async function copyLink() {
+      writeHash();
+      const btn = document.getElementById('copyLinkBtn');
+      try {
+        await navigator.clipboard.writeText(location.href);
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy Link'; }, 2000);
+      } catch {
+        window.prompt('Copy this link:', location.href);
+      }
+    }
+
+    // ---- CSV download: the selected area or every area in the geography, plus Texas and U.S. rows ----
+    const slugify = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const RACE_ROWS = [
+      { label: 'Hispanic or Latino children', id: 'pct_Hispu18' },
+      { label: 'White (Non-Hispanic) children', id: 'pct_whiteNHu18' },
+      { label: 'Black or African American children', id: 'pct_blacku18' },
+      { label: 'Asian children', id: 'pct_asianu18' },
+      { label: 'Two or More Races children', id: 'pct_two_moreu18' },
+      { label: 'AIAN, NHPI, or Other Race children', id: 'pct_otheru18' }
+    ];
+    const AGE_ROWS = [
+      { label: 'Children under 5', id: 'pct_u5' },
+      { label: 'Children 5 to 9', id: 'pct_age_5to9' },
+      { label: 'Children 10 to 14', id: 'pct_age_10to14' },
+      { label: 'Children 15 to 17', id: 'pct_age_15to17' }
+    ];
+    function csvColumns() {
+      const cols = [
+        { head: 'GEOID', get: p => p.GEOID },
+        { head: 'Name', get: p => p.NAME },
+        { head: 'Total population', get: p => p.totpop },
+        { head: 'Children under 18', get: p => p.kids_u18 }
+      ];
+      // Each percentage gets its value, 90% MOE, and reliability flag (values are included even when unreliable)
+      const pctCols = (label, id, countId) => {
+        cols.push({ head: `${label} (%)`, get: p => p[id] });
+        cols.push({ head: `${label} (%) 90% MOE`, get: p => p[`${id}_moe`] });
+        if (countId) cols.push({ head: `${label} (count)`, get: p => p[countId] });
+        cols.push({ head: `${label} reliability`, get: p => ({ reliable: '', missing: 'No data', unreliable: `Unreliable (CV > ${CV_UNRELIABLE}%)` })[reliability(p, id).status] });
+      };
+      pctCols('Children under 18, share of total population', 'pct_u18');
+      availableIndicators().forEach(ind => pctCols(ind.label, ind.id, ind.count_id));
+      RACE_ROWS.forEach(r => pctCols(`${r.label}, share of children`, r.id));
+      AGE_ROWS.filter(a => a.id !== 'pct_u5').forEach(a => pctCols(`${a.label}, share of children`, a.id));
+      return cols;
+    }
+    function downloadCSV(rows, fileTag) {
+      const cols = csvColumns();
+      const all = [...rows];
+      if (benchmarks) all.push(benchmarks.texas, benchmarks.us);
+      const cell = (v) => {
+        if (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) return '';
+        const s = String(v);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const lines = [cols.map(c => cell(c.head)).join(',')]
+        .concat(all.map(p => cols.map(c => cell(c.get(p))).join(',')));
+      // Byte-order mark so Excel opens the file as UTF-8
+      const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `tx-kids-count-2026_${currentGeo}_${fileTag}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     }
 
     function updateChoropleth() {
@@ -402,11 +764,15 @@
       document.getElementById('legendSource').textContent = `Source: ${currentInd.source}`;
       document.getElementById('legendBar').innerHTML = currentInd.colors
         .map(c => `<div class="flex-1" style="background:${c}"></div>`).join('');
-      document.getElementById('legendLabels').innerHTML = 
+      document.getElementById('legendLabels').innerHTML =
         `<span><${currentInd.stops[0]}%</span>` +
         currentInd.stops.map(s => `<span>${s}%</span>`).join('');
       document.getElementById('legendUnreliableSwatch').style.background = UNRELIABLE_COLOR;
       document.getElementById('legendUnreliableLabel').textContent = `Unreliable (CV > ${CV_UNRELIABLE}%) or no data`;
+      const tx = benchmarks ? toNum(benchmarks.texas?.[currentInd.id]) : null;
+      const us = benchmarks ? toNum(benchmarks.us?.[currentInd.id]) : null;
+      document.getElementById('legendBench').textContent =
+        [tx !== null ? `Texas ${fmtPct(tx)}` : '', us !== null ? `U.S. ${fmtPct(us)}` : ''].filter(Boolean).join(' · ');
     }
 
     function renderSidebar(props) {
@@ -427,48 +793,40 @@
       document.getElementById('activeIndRel').textContent = activeUnreliable ? SUPPRESSED_NOTE : '';
       document.getElementById('activeIndRel').classList.toggle('hidden', !activeUnreliable);
       document.getElementById('activeIndCount').textContent = (currentInd.count_id && !activeUnreliable) ? `(${fmtInt(props[currentInd.count_id])} children)` : '';
+      document.getElementById('activeIndBench').innerHTML = benchmarkHTML(props, currentInd.id);
       document.getElementById('activeIndDef').textContent = currentInd.definition || '';
 
       const geoNoun = { counties: 'County', house: 'District', senate: 'District', schools: 'School District' }[currentGeo] || '';
       document.getElementById('demographicsHeading').textContent = `${geoNoun} Demographics`;
 
-      const races = [
-        { label: 'Hispanic or Latino', id: 'pct_Hispu18' },
-        { label: 'White (Non-Hispanic)', id: 'pct_whiteNHu18' },
-        { label: 'Black or African American', id: 'pct_blacku18' },
-        { label: 'Asian', id: 'pct_asianu18' },
-        { label: 'Two or More Races', id: 'pct_two_moreu18' },
-        { label: 'AIAN, NHPI, or Other Race', id: 'pct_otheru18' }
-      ];
       const clamp = (n) => Math.max(0, Math.min(100, n));
-      document.getElementById('raceBreakdown').innerHTML = races.map(r => {
+      document.getElementById('raceBreakdown').innerHTML = RACE_ROWS.map(r => {
         const pct = toNum(props[r.id]) ?? 0;
         const moe = toNum(props[`${r.id}_moe`]) ?? 0;
         const unreliable = reliability(props, r.id).status === 'unreliable';
         const lo = clamp(pct - moe), hi = clamp(pct + moe);
+        const tx = benchmarks ? toNum(benchmarks.texas?.[r.id]) : null;
         return `
         <div>
           <div class="flex justify-between mb-0.5">
-            <span class="${unreliable ? 'text-slate-500' : 'text-slate-700'}">${r.label}</span>
+            <span class="${unreliable ? 'text-slate-600' : 'text-slate-700'}">${r.label.replace(/ children$/, '')}</span>
             <span class="whitespace-nowrap">
-              <span class="font-semibold ${unreliable ? 'text-slate-500' : 'text-slate-900'}">${fmtPct(props[r.id])}</span>
-              <span class="text-[10px] text-slate-500 ml-0.5">${fmtMoe(props, r.id)}</span>
+              <span class="font-semibold ${unreliable ? 'text-slate-600' : 'text-slate-900'}">${fmtPct(props[r.id])}</span>
+              <span class="text-xs text-slate-600 ml-0.5">${fmtMoe(props, r.id)}</span>
             </span>
           </div>
-          <div class="relative w-full bg-[#E5D7C3]/70 h-1.5 rounded overflow-hidden">
-            <div class="absolute inset-y-0 left-0 h-full" style="width:${clamp(pct)}%;background:${unreliable ? UNRELIABLE_COLOR : '#0f766e'}"></div>
+          <div class="relative w-full bg-[#E5D7C3]/70 h-1.5 rounded">
+            <div class="absolute inset-y-0 left-0 h-full rounded-l" style="width:${clamp(pct)}%;background:${unreliable ? UNRELIABLE_COLOR : '#0f766e'}"></div>
             <div class="absolute inset-y-0 h-full" style="left:${lo}%;width:${hi - lo}%;background:${unreliable ? UNRELIABLE_COLOR : '#0f766e'};opacity:0.35"></div>
+            ${tx !== null ? `<div class="absolute -top-1 -bottom-1 w-0.5 bg-slate-900" style="left:calc(${clamp(tx)}% - 1px)" title="Texas: ${fmtPct(tx)}"></div>` : ''}
           </div>
+          ${tx !== null ? `<div class="flex items-center justify-end gap-1 text-xs text-slate-600 mt-1"><span class="inline-block w-0.5 h-2.5 bg-slate-900"></span>Texas ${fmtPct(tx)}</div>` : ''}
         </div>`;
       }).join('');
 
       // Age-group pie chart (slices drawn from shares normalized to sum to 100%, so rounding never leaves a gap)
-      const ages = [
-        { label: 'Under 5', id: 'pct_u5', color: '#134e4a' },
-        { label: '5 to 9', id: 'pct_age_5to9', color: '#0f766e' },
-        { label: '10 to 14', id: 'pct_age_10to14', color: '#2dd4bf' },
-        { label: '15 to 17', id: 'pct_age_15to17', color: '#99f6e4' }
-      ];
+      const ageColors = ['#134e4a', '#0f766e', '#2dd4bf', '#99f6e4'];
+      const ages = AGE_ROWS.map((a, i) => ({ ...a, label: a.label.replace('Children ', '').replace(/^u/, 'U'), color: ageColors[i] }));
       // Only show the pie when every slice is reliable (same CV rule as the map), so no slice is missing or suppressed
       const ageSuppressed = ages.some(a => reliability(props, a.id).status !== 'reliable');
       document.getElementById('ageSuppressed').classList.toggle('hidden', !ageSuppressed);
@@ -482,30 +840,35 @@
         const [x1, y1, x2, y2] = [Math.cos(start), Math.sin(start), Math.cos(angle), Math.sin(angle)];
         return `<path d="M0 0 L${x1} ${y1} A1 1 0 ${frac > 0.5 ? 1 : 0} 1 ${x2} ${y2} Z" fill="${a.color}" stroke="#F8EFE1" stroke-width="0.03" stroke-linejoin="round" />`;
       }).join('') : `<circle r="1" fill="${UNRELIABLE_COLOR}" />`;
-      document.getElementById('ageLegend').innerHTML = ages.map(a => `
+      document.getElementById('ageLegend').innerHTML = ages.map(a => {
+        const tx = benchmarks ? toNum(benchmarks.texas?.[a.id]) : null;
+        return `
         <div class="flex items-center justify-between gap-2">
           <span class="flex items-center gap-1.5 text-slate-700">
             <span class="inline-block w-2.5 h-2.5 rounded-sm ring-1 ring-black/10 shrink-0" style="background:${a.color}"></span>${a.label}
           </span>
-          <span class="whitespace-nowrap">
+          <span class="whitespace-nowrap text-right">
             <span class="font-semibold text-slate-900">${fmtPct(props[a.id])}</span>
-            <span class="text-[10px] text-slate-500 ml-0.5">${fmtMoe(props, a.id)}</span>
+            <span class="text-xs text-slate-600 ml-0.5">${fmtMoe(props, a.id)}</span>
+            ${tx !== null ? `<span class="block text-xs text-slate-600">Texas ${fmtPct(tx)}</span>` : ''}
           </span>
-        </div>`).join('');
+        </div>`;
+      }).join('');
 
       document.getElementById('allIndicatorsList').innerHTML = availableIndicators().map(ind => {
         const unreliable = reliability(props, ind.id).status === 'unreliable';
         const value = unreliable
-          ? `<span class="text-[10px] font-semibold text-slate-500">${SUPPRESSED_NOTE}</span>`
+          ? `<span class="text-xs font-semibold text-slate-600">${SUPPRESSED_NOTE}</span>`
           : `<span class="font-bold text-slate-900">${fmtPct(props[ind.id])}</span>
-             <span class="text-[10px] text-slate-500 ml-0.5">${fmtMoe(props, ind.id)}</span>`;
+             <span class="text-xs text-slate-600 ml-0.5">${fmtMoe(props, ind.id)}</span>`;
         return `
         <div class="py-2">
           <div class="flex justify-between items-center">
             <span class="text-slate-700 pr-2">${ind.label}</span>
             <span class="whitespace-nowrap">${value}</span>
           </div>
-          ${ind.definition ? `<p class="text-[10px] leading-snug text-slate-500 mt-0.5 pr-10">${ind.definition}</p>` : ''}
+          ${benchmarkHTML(props, ind.id, { compact: true })}
+          ${ind.definition ? `<p class="text-xs leading-snug text-slate-600 mt-0.5 pr-10">${ind.definition}</p>` : ''}
         </div>
       `;
       }).join('');

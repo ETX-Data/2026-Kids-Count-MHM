@@ -36,10 +36,10 @@ get_acs_retry <- function(..., tries = 3) {
   stop(res)
 }
 
-get_race_eth_u18 <- function(geography, survey, year) {
+get_race_eth_u18 <- function(geography, survey, year, state = "TX") {
   df <- race_tables %>%
     map(function(t) get_acs_retry(
-      survey = survey, state = "TX", year = year,
+      survey = survey, state = state, year = year,
       geography = geography, variables = paste0("B01001", t, "_", u18_cells),
       geometry = FALSE, output = "wide"
     )) %>%
@@ -97,15 +97,15 @@ pct_moe <- function(num, den, moe_num, moe_den) {
 # current Census data, kept so published and calculated MOEs always follow one rule)
 pub_moe <- function(est, moe) pmin(fill_controlled(est, moe), 100)
 
-# 3. Substate Pull + Simplification + Export to GeoJSON
-export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
-  message("Pulling ", file_slug, "...")
-  
-  race_df <- get_race_eth_u18(geography = geo_code, survey = "acs5", year = year)
-  
-  core_df <- get_acs(
+# 3. Pull and calculate every indicator for one geography level. Used for the substate map layers
+# (geometry = TRUE) and for the Texas and U.S. comparison values (geography "state" / "us", with state = NULL
+# for the U.S.), so the comparison values are calculated exactly like the map values.
+pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry = FALSE) {
+  race_df <- get_race_eth_u18(geography = geo_code, survey = "acs5", year = year, state = state)
+
+  core_df <- get_acs_retry(
     survey    = "acs5",
-    state     = "TX",
+    state     = state,
     year      = year,
     geography = geo_code,
     variables = c(
@@ -145,7 +145,7 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       own_male_only = "B09002_009",   # Own children in male householder, no spouse present families
       own_fem_only  = "B09002_015"    # Own children in female householder, no spouse present families
     ),
-    geometry = TRUE,
+    geometry = geometry,
     output   = "wide"
   ) %>%
     transmute(
@@ -210,8 +210,8 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
                                    own_kids_totM),
       pct_no_net_moe     = pct_moe(u18_no_netE + u18_no_compE, u18_comp_totE,
                                    moe_add(list(u18_no_netE, u18_no_compE), list(u18_no_netM, u18_no_compM)),
-                                   u18_comp_totM),
-      geometry
+                                   u18_comp_totM)
+      # (sf keeps the geometry column automatically when geometry = TRUE)
     ) %>%
     left_join(race_df, by = c("GEOID", "NAME")) %>%
     mutate(
@@ -236,8 +236,15 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
       pct_no_net      = round((u18_no_net / u18_comp_tot) * 100, 1),
       pct_lep_5to17   = round((lep_5to17 / kids_5to17) * 100, 1),
       pct_single_par  = round((single_par_u18 / own_kids_tot) * 100, 1)
-    ) %>%
-    st_transform(4326) # Standard WGS84 for MapLibre web maps
+    )
+
+  if (inherits(core_df, "sf")) st_transform(core_df, 4326) else core_df # Standard WGS84 for MapLibre web maps
+}
+
+# 4. Substate Pull + Simplification + Export to GeoJSON
+export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
+  message("Pulling ", file_slug, "...")
+  core_df <- pull_indicators(geo_code, year = year, geometry = TRUE)
 
   # OPTIONAL HOOK: Merge non-ACS CSV data (TEA STAAR, Feeding America, TX HHS) by GEOID!
   # if (file.exists(paste0("data-prep/external_", file_slug, ".csv"))) {
@@ -253,6 +260,57 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
   if (file.exists(out_path)) file.remove(out_path)
   st_write(simplified_sf, out_path, driver = "GeoJSON", quiet = TRUE)
 }
+
+# 5. Texas and U.S. comparison values (sidebar comparison lines, significance arrows, CSV download)
+# Written to docs/data/benchmarks.json as {"texas": {...}, "us": {...}} with the same field names as the map layers.
+export_benchmarks <- function(year = acs5_year) {
+  message("Pulling Texas and U.S. comparison values...")
+  tx <- pull_indicators("state", year = year, state = "TX")
+  us <- pull_indicators("us", year = year, state = NULL)
+  out <- list(texas = as.list(tx[1, ]), us = as.list(us[1, ]))
+  write_json(out, "docs/data/benchmarks.json", auto_unbox = TRUE, digits = NA, na = "null", pretty = TRUE)
+}
+
+# 6. City and ZIP code search lookup (docs/data/places.json)
+# Uses Census Gazetteer internal points: the dashboard selects the map area that contains a city's or ZIP
+# code's (ZCTA's) internal point. Places are Texas incorporated places and CDPs (shown as "community").
+# Texas ZCTAs are the ones starting with 75-79, 733, or 885.
+gazetteer_year <- 2024
+read_gazetteer <- function(file) {
+  url <- sprintf("https://www2.census.gov/geo/docs/maps-data/data/gazetteer/%d_Gazetteer/%d_%s.zip",
+                 gazetteer_year, gazetteer_year, file)
+  zip <- tempfile(fileext = ".zip")
+  download.file(url, zip, mode = "wb", quiet = TRUE)
+  df <- read.delim(unz(zip, unzip(zip, list = TRUE)$Name[1]), colClasses = "character", check.names = FALSE)
+  names(df) <- trimws(names(df))
+  df
+}
+
+export_search_places <- function() {
+  message("Building city and ZIP code search lookup...")
+  places <- read_gazetteer("Gaz_place_national") %>%
+    filter(USPS == "TX") %>%
+    mutate(
+      type  = sub("^.* (city|town|village|CDP)$", "\\1", NAME),
+      base  = sub(" (city|town|village|CDP)$", "", NAME),
+      label = paste0(base, " (", ifelse(type == "CDP", "community", type), ")"),
+      lon   = round(as.numeric(INTPTLONG), 5),
+      lat   = round(as.numeric(INTPTLAT), 5)
+    ) %>%
+    arrange(label)
+  zips <- read_gazetteer("Gaz_zcta_national") %>%
+    filter(grepl("^(7[5-9]|733|885)", GEOID)) %>%
+    mutate(lon = round(as.numeric(INTPTLONG), 5), lat = round(as.numeric(INTPTLAT), 5))
+  out <- list(
+    places = unname(Map(function(l, x, y) list(l, x, y), places$label, places$lon, places$lat)),
+    zips   = setNames(Map(function(x, y) c(x, y), zips$lon, zips$lat), zips$GEOID)
+  )
+  write_json(out, "docs/data/places.json", auto_unbox = TRUE, digits = NA)
+}
+
+dir.create("docs/data", recursive = TRUE, showWarnings = FALSE)
+export_benchmarks()
+export_search_places()
 
 # Run and export all 4 map layers into docs/data/
 export_geography_geojson("county", "counties")

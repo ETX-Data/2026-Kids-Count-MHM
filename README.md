@@ -23,6 +23,10 @@ The dashboard uses a **config-driven architecture**: - **Data Pipeline (`/data-p
 - **MOEs:** All are 90%. Where Census publishes no percentage MOE, it is approximated with Census formulas (*Understanding and Using ACS Data*, Ch. 8). These closely match published MOEs for counties and legislative districts (median ratio 1.00) and less closely for school districts (about 0.8–1.1x).
 - **Reliability:** Estimates with a CV above 40% (CV = (MOE / 1.645) / estimate), or 0% with a nonzero MOE, are hidden and shown in gray on the map. Missing values are also gray.
 - **Geometry:** Boundaries are simplified to 5% of vertices for fast loading; data values are unaffected.
+- **Texas and U.S. comparisons:** Texas and U.S. values (`docs/data/benchmarks.json`) come from the same tables and calculations as the map layers. An area is marked ▲ higher or ▼ lower than Texas only when the difference is statistically significant at the 90% confidence level, using the Census Bureau test |A − B| > √(MOE_A² + MOE_B²); otherwise it is marked ≈ (not significantly different). Comparisons are not shown for unreliable estimates. The test ignores the overlap between an area and the state, as Census guidance does for these comparisons.
+- **City and ZIP search:** Uses the internal points of Texas places (cities, towns, villages, and CDPs, shown as "community") and ZIP Code Tabulation Areas from the 2024 Census Gazetteer files (`docs/data/places.json`). The dashboard selects the area that contains that point, so a city or ZIP that crosses a boundary is matched to only one area; the sidebar says so.
+- **CSV downloads:** Include every value with its 90% MOE and a reliability flag. Unlike the map and sidebar, unreliable values are included (flagged) so researchers can apply their own rules. Texas and U.S. rows are added at the bottom.
+- **Shareable links:** The URL hash records the view as `#<geography>/<indicator id>/<GEOID>` (for example `#counties/pct_pov/48453` for Travis County). Geography slugs are `counties`, `house`, `senate`, and `schools`.
 
 ------------------------------------------------------------------------
 
@@ -43,6 +47,8 @@ The dashboard uses a **config-driven architecture**: - **Data Pipeline (`/data-p
     ├── config/
     │   └── indicators.json       # Master configuration for all map indicators
     └── data/
+        ├── benchmarks.json       # Texas and U.S. comparison values
+        ├── places.json           # City and ZIP code search lookup
         ├── counties.geojson      # 254 Texas Counties
         ├── house.geojson         # 150 Texas House Districts
         ├── senate.geojson        # 31 Texas Senate Districts
