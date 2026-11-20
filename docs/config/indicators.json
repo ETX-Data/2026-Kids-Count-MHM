@@ -19,7 +19,7 @@
     "category": "Demographics",
     "source": "U.S. Census Bureau, 2024 American Community Survey (ACS) 5-Year Estimates (Table S0101)",
     "stops": [20, 23, 26, 29, 32],
-    "colors": ["#f2f0f7", "#dadaeb", "#bcbddc", "#9e9ac8", "#756bb1", "#54278f"]
+    "colors": ["#edf8e9", "#c7e9c0", "#a1d99b", "#74c476", "#31a354", "#006d2c"]
   },
   {
     "id": "pct_lep_5to17",
@@ -131,7 +131,7 @@
     "category": "Economic Security",
     "source": "U.S. Census Bureau, 2024 American Community Survey (ACS) 5-Year Estimates (Table B22002)",
     "stops": [8, 14, 20, 26, 32],
-    "colors": ["#f1eef6", "#d0d1e6", "#a6bddb", "#74a9cf", "#2b8cbe", "#045a8d"]
+    "colors": ["#fef0d9", "#fdcc8a", "#fc8d59", "#e34a33", "#b30000", "#7f0000"]
   },
   {
     "id": "pct_child_fi",
@@ -228,6 +228,6 @@
     "missing_note": "Masked by TEA for student privacy, or no graduating class",
     "us_note": "U.S. value is from a different source and year: National Center for Education Statistics (NCES), EDFacts, 4-year adjusted cohort graduation rate, 2022-23 school year (latest available), as reported by America's Health Rankings. It uses the same federal definition as the TEA rate.",
     "stops": [90, 93, 95, 97, 99],
-    "colors": ["#eff3ff", "#c6dbef", "#9ecae1", "#6baed6", "#3182bd", "#08519c"]
+    "colors": ["#ffffcc", "#c7e9b4", "#7fcdbb", "#41b6c4", "#2c7fb8", "#253494"]
   }
 ]
