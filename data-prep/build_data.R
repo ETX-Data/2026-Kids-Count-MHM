@@ -81,9 +81,49 @@ pct_moe <- function(num, den, moe_num, moe_den) {
 # Published pct MOEs, same rules as above
 pub_moe <- function(est, moe) pmin(fill_controlled(est, moe), 100)
 
-# 3. Pull + calc all indicators for one geography (map layers, TX & US)
+# 3. Indicators built from summed ACS cells
+extra_cells <- list(
+  pov50_u18    = sprintf("B17024_%03d", c(3, 16, 29)),                  # Kids < 50% FPL (extreme poverty)
+  pov200_u18   = sprintf("B17024_%03d", c(3:10, 16:23, 29:36)),         # Kids < 200% FPL (low-income)
+  pov_univ_b   = sprintf("B17024_%03d", c(2, 15, 28)),                  # Kids under 6 + 6-11 + 12-17 (poverty universe)
+  nolf_par_u18 = sprintf("B23008_%03d", c(7, 11, 14, 20, 24, 27)),      # Own kids w/ no parent in labor force
+  own_kids_lf  = "B23008_001",                                          # Own kids in families (B23008 universe)
+  idle_16to19  = sprintf("B14005_%03d", c(10, 11, 14, 15, 24, 25, 28, 29)), # Teens not enrolled + unemployed/not in LF
+  teens_16to19 = "B14005_001",                                          # Teens 16-19
+  imm_fam_u18  = sprintf("B05009_%03d", c(7, 10, 17, 25, 28, 35)),      # Own kids w/ at least 1 foreign-born parent
+  own_kids_nat = "B05009_001"                                           # Own kids in families (B05009 universe)
+)
+# Rate id -> c(numerator, denominator) from extra_cells
+extra_rates <- list(
+  pct_pov50       = c("pov50_u18", "pov_univ_b"),
+  pct_pov200      = c("pov200_u18", "pov_univ_b"),
+  pct_nolf_par    = c("nolf_par_u18", "own_kids_lf"),
+  pct_idle_teens  = c("idle_16to19", "teens_16to19"),
+  pct_imm_fam     = c("imm_fam_u18", "own_kids_nat")
+)
+
+get_extra_indicators <- function(geography, year, state = "TX") {
+  df <- get_acs_retry(survey = "acs5", state = state, year = year, geography = geography,
+                      variables = unique(unlist(extra_cells)), geometry = FALSE, output = "wide")
+  out <- df[, c("GEOID", "NAME")]
+  moes <- list()
+  for (g in names(extra_cells)) {
+    ests <- lapply(extra_cells[[g]], function(v) df[[paste0(v, "E")]])
+    out[[g]] <- Reduce(`+`, ests)
+    moes[[g]] <- moe_add(ests, lapply(extra_cells[[g]], function(v) df[[paste0(v, "M")]]))
+  }
+  for (r in names(extra_rates)) {
+    n <- extra_rates[[r]][1]; d <- extra_rates[[r]][2]
+    out[[r]] <- round(out[[n]] / out[[d]] * 100, 1)
+    out[[paste0(r, "_moe")]] <- pct_moe(out[[n]], out[[d]], moes[[n]], moes[[d]])
+  }
+  out
+}
+
+# 4. Pull + calc all indicators for one geography (map layers, TX & US)
 pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry = FALSE) {
-  race_df <- get_race_eth_u18(geography = geo_code, survey = "acs5", year = year, state = state)
+  race_df  <- get_race_eth_u18(geography = geo_code, survey = "acs5", year = year, state = state)
+  extra_df <- get_extra_indicators(geography = geo_code, year = year, state = state)
 
   core_df <- get_acs_retry(
     survey    = "acs5",
@@ -122,7 +162,8 @@ pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry =
       lep_5to17     = "B16003_002",   # Kids 5-17 in limited English HHs
       own_kids_tot  = "B09002_001",   # Own kids in families (family type universe)
       own_male_only = "B09002_009",   # Own kids, single dad HH
-      own_fem_only  = "B09002_015"    # Own kids, single mom HH
+      own_fem_only  = "B09002_015",   # Own kids, single mom HH
+      kids_3to4     = "B09001_004"    # Kids 3-4 in households (Pre-K denominator)
     ),
     geometry = geometry,
     output   = "wide"
@@ -136,6 +177,8 @@ pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry =
       kids_5to9    = kids_5to9E,
       kids_10to14  = kids_10to14E,
       kids_15to17  = kids_15to17E,
+      kids_3to4    = kids_3to4E,
+      kids_3to4_moe = fill_controlled(kids_3to4E, kids_3to4M), # For Pre-K rate MOE
       # Age-group shares + MOEs (pie chart)
       pct_age_5to9       = round(kids_5to9E / kids_u18E * 100, 1),
       pct_age_10to14     = round(kids_10to14E / kids_u18E * 100, 1),
@@ -190,6 +233,7 @@ pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry =
                                    u18_comp_totM)
     ) %>%
     left_join(race_df, by = c("GEOID", "NAME")) %>%
+    left_join(extra_df, by = c("GEOID", "NAME")) %>%
     mutate(
       pct_u5         = round((kids_u5 / kids_u18) * 100, 1),
       pct_blacku18    = round((black_u18 / kids_u18) * 100, 1),
@@ -216,16 +260,26 @@ pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry =
   if (inherits(core_df, "sf")) st_transform(core_df, 4326) else core_df # Standard WGS84 for MapLibre web maps
 }
 
+# Pre-K rate = TEA count / ACS kids 3-4. MOE is from the ACS denom only; > 100% -> NA
+add_prek_rate <- function(df) {
+  if (!all(c("prek_n", "kids_3to4_moe") %in% names(df))) return(df)
+  df %>% mutate(
+    pct_prek     = round(prek_n / kids_3to4 * 100, 1),
+    pct_prek_moe = ifelse(pct_prek > 100, NA, pct_moe(prek_n, kids_3to4, 0, kids_3to4_moe)),
+    pct_prek     = ifelse(pct_prek > 100, NA, pct_prek)
+  )
+}
+
 # Merge non-ACS CSVs from clean_external.R by GEOID
 merge_external <- function(df, slug) {
   for (f in list.files("data-prep/clean_data", paste0("_", slug, "\\.csv$"), full.names = TRUE)) {
     ext <- read.csv(f, colClasses = c(GEOID = "character")) %>% select(-any_of("NAME"))
     df <- left_join(select(df, -any_of(setdiff(names(ext), "GEOID"))), ext, by = "GEOID")
   }
-  df
+  add_prek_rate(df)
 }
 
-# 4. Substate Pull + Simplification + Export to GeoJSON
+# 5. Substate Pull + Simplification + Export to GeoJSON
 export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
   message("Pulling ", file_slug, "...")
   core_df <- pull_indicators(geo_code, year = year, geometry = TRUE)
@@ -241,7 +295,7 @@ export_geography_geojson <- function(geo_code, file_slug, year = acs5_year) {
   st_write(simplified_sf, out_path, driver = "GeoJSON", quiet = TRUE)
 }
 
-# 5. TX & US comparison values -> benchmarks.json
+# 6. TX & US comparison values -> benchmarks.json
 export_benchmarks <- function(year = acs5_year) {
   message("Pulling Texas and U.S. comparison values...")
   tx <- merge_external(pull_indicators("state", year = year, state = "TX"), "counties")
@@ -250,7 +304,7 @@ export_benchmarks <- function(year = acs5_year) {
   write_json(out, "docs/data/benchmarks.json", auto_unbox = TRUE, digits = NA, na = "null", pretty = TRUE)
 }
 
-# 6. City & ZIP search lookup -> places.json (uses Census Gazetteer points)
+# 7. City & ZIP search lookup -> places.json (uses Census Gazetteer points)
 gazetteer_year <- 2024
 read_gazetteer <- function(file) {
   url <- sprintf("https://www2.census.gov/geo/docs/maps-data/data/gazetteer/%d_Gazetteer/%d_%s.zip",

@@ -96,13 +96,47 @@ tdc <- tdc %>%
 message("TDC projection year: ", tdc_yr)
 write_csv(tdc, "data-prep/clean_data/tdc_child_pop_projection_counties.csv", na = "")
 
+# TEA Pre-K counts (Early Ed excluded). Denom (ACS kids 3-4) gets added in build_data.R
+read_tea_enr <- function(pattern) {
+  read_csv(list.files(raw, pattern, full.names = TRUE)[1], skip = 4, col_types = cols(.default = "c")) %>%
+    mutate(prek = ifelse(GRADE %in% "Pre-kindergarten", suppressWarnings(as.numeric(ENROLLMENT)), 0)) # Masked ("<10") -> NA
+}
+# Counties (incl. charters). Not in file -> NA, no Pre-K row -> 0. Some counties have 2+ rows (ESC regions)
+prek_c <- read_tea_enr("^Enrollment Report_Statewide_Counties_Grade") %>%
+  group_by(key = key(`COUNTY NAME`)) %>%
+  summarise(prek_n = sum(prek), .groups = "drop") %>%
+  join_counties()
+prek_tx <- sum(read_tea_enr("^Enrollment Report_Statewide_Grade")$prek)
+write_csv(bind_rows(tibble(GEOID = "48", NAME = "Texas", prek_n = prek_tx), select(prek_c, GEOID, NAME, prek_n)),
+          "data-prep/clean_data/tea_prek_counties.csv", na = "")
+
+# Districts: ISDs only (charters have no Census boundary); masked -> NA
+prek_d <- read_tea_enr("^Enrollment Report_Statewide_Districts_Grade") %>%
+  filter(`CHARTER STATUS` == "TRADITIONAL ISD/CSD") %>%
+  group_by(DISTRICT) %>%
+  summarise(prek_n = sum(prek), .groups = "drop") %>%
+  inner_join(xwalk, by = "DISTRICT") %>%
+  select(GEOID, NAME = lea_name, prek_n)
+message("School districts with masked Pre-K counts: ", sum(is.na(prek_d$prek_n)), " of ", nrow(prek_d))
+write_csv(prek_d, "data-prep/clean_data/tea_prek_schools.csv", na = "")
+
+# Same as build_data.R (needs kids_3to4 from a full rebuild)
+add_prek_rate <- function(df) {
+  if (!all(c("prek_n", "kids_3to4_moe") %in% names(df))) return(df)
+  df %>% mutate(
+    pct_prek     = round(prek_n / kids_3to4 * 100, 1),
+    pct_prek_moe = ifelse(is.finite(pct_prek) & pct_prek <= 100, pmin(round(prek_n * kids_3to4_moe / kids_3to4^2 * 100, 1), 100), NA),
+    pct_prek     = ifelse(pct_prek > 100, NA, pct_prek)
+  )
+}
+
 # Merge into existing docs/data files (no ACS re-pull needed)
 merge_external <- function(df, slug) {
   for (f in list.files("data-prep/clean_data", paste0("_", slug, "\\.csv$"), full.names = TRUE)) {
     ext <- read.csv(f, colClasses = c(GEOID = "character")) %>% select(-any_of("NAME"))
     df <- left_join(select(df, -any_of(setdiff(names(ext), "GEOID"))), ext, by = "GEOID")
   }
-  df
+  add_prek_rate(df)
 }
 for (slug in c("counties", "schools")) {
   path <- paste0("docs/data/", slug, ".geojson")
@@ -112,7 +146,13 @@ for (slug in c("counties", "schools")) {
 }
 bench <- read_json("docs/data/benchmarks.json")
 for (b in list(c("texas", "48"), c("us", "1"))) {
-  v <- merge_external(data.frame(GEOID = b[2]), "counties")
-  bench[[b[1]]][setdiff(names(v), "GEOID")] <- as.list(v[1, setdiff(names(v), "GEOID")])
+  cur <- bench[[b[1]]]
+  v <- merge_external(data.frame(GEOID = b[2], kids_3to4 = cur$kids_3to4 %||% NA, kids_3to4_moe = cur$kids_3to4_moe %||% NA),
+                      "counties")
+  new <- setdiff(names(v), c("GEOID", "kids_3to4", "kids_3to4_moe"))
+  bench[[b[1]]][new] <- as.list(v[1, new])
 }
+# US Pre-K: NCES 2023, public programs only: https://usafacts.org/articles/how-many-children-attend-preschool-us/
+bench$us$pct_prek <- 28.6
+bench$us$pct_prek_moe <- NA
 write_json(bench, "docs/data/benchmarks.json", auto_unbox = TRUE, digits = NA, na = "null", null = "null", pretty = TRUE)

@@ -252,6 +252,8 @@
     }
     // Unreliable estimates are suppressed: no value, margin of error, or count is shown
     const SUPPRESSED_NOTE = 'Not shown: estimate is unreliable';
+    // Optional per-indicator "unreliable_note" in indicators.json
+    const unreliableNote = (ind) => ind?.unreliable_note || SUPPRESSED_NOTE;
     // Missing values. For ACS indicators these all come from a denominator of 0 (for example, the ACS estimates no
     // children in Loving County), not from Census suppression. Other sources can set "missing_note" in indicators.json.
     const missingNote = (ind) => ind?.missing_note
@@ -342,7 +344,7 @@
         summary = share < 10 ? `Among the lowest ${noun}` : share < 35 ? `Lower than most ${noun}`
           : share <= 65 ? `Near the middle of Texas ${noun}` : share <= 90 ? `Higher than most ${noun}` : `Among the highest ${noun}`;
       } else {
-        summary = reliability(props, id).status === 'missing' ? esc(missingNote(ind)) : 'This area is not shown (unreliable estimate)';
+        summary = reliability(props, id).status === 'missing' ? esc(missingNote(ind)) : (ind?.unreliable_note ? esc(ind.unreliable_note) : 'This area is not shown (unreliable estimate)');
       }
       const hidden = all.length - pts.length;
       return `
@@ -697,7 +699,7 @@
       const value = rel === 'reliable'
         ? `<span class="text-base font-extrabold text-teal-800">${fmtPct(props[currentInd.id])}</span>
            <span class="text-[11px] font-semibold text-teal-700">${fmtMoe(props, currentInd.id)}</span>`
-        : `<span class="text-[11px] font-semibold text-slate-600">${rel === 'missing' ? esc(missingNote(currentInd)) : 'Unreliable estimate (not shown)'}</span>`;
+        : `<span class="text-[11px] font-semibold text-slate-600">${rel === 'missing' ? esc(missingNote(currentInd)) : (currentInd.unreliable_note ? esc(currentInd.unreliable_note) : 'Unreliable estimate (not shown)')}</span>`;
       const tx = benchmarks ? toNum(benchmarks.texas?.[currentInd.id]) : null;
       return `
         <div class="text-xs text-slate-800">
@@ -864,6 +866,13 @@
       { label: 'Children 10 to 14', id: 'pct_age_10to14' },
       { label: 'Children 15 to 17', id: 'pct_age_15to17' }
     ];
+    // CSV reliability label (no MOE gets its own)
+    function relLabel(p, id, ind) {
+      const status = reliability(p, id).status;
+      if (status === 'missing') return missingNote(ind);
+      if (status === 'unreliable') return `Unreliable (CV > ${CV_UNRELIABLE}%)`;
+      return toNum(p[`${id}_moe`]) === null ? 'No margin of error (CV not calculated)' : `Reliable (CV ≤ ${CV_UNRELIABLE}%)`;
+    }
     function csvColumns() {
       const cols = [
         { head: 'GEOID', get: p => p.GEOID },
@@ -877,7 +886,7 @@
         cols.push({ head: `${label} (%) 90% MOE`, get: p => p[`${id}_moe`] });
         if (countId) cols.push({ head: `${label} (count)`, get: p => p[countId] });
         if (ind?.denom_id) cols.push({ head: `${label} (${ind.denom_label || 'denominator'})`, get: p => p[ind.denom_id] });
-        cols.push({ head: `${label} reliability`, get: p => ({ reliable: '', missing: missingNote(ind), unreliable: `Unreliable (CV > ${CV_UNRELIABLE}%)` })[reliability(p, id).status] });
+        cols.push({ head: `${label} reliability`, get: p => relLabel(p, id, ind) });
       };
       pctCols('Children under 18, share of total population', 'pct_u18');
       availableIndicators().forEach(ind => pctCols(ind.label, ind.id, ind.count_id, ind));
@@ -954,7 +963,7 @@
       const activeUnreliable = activeStatus !== 'reliable';
       document.getElementById('activeIndPct').textContent = activeUnreliable ? '—' : fmtPct(props[currentInd.id]);
       document.getElementById('activeIndMoe').textContent = activeUnreliable ? '' : fmtMoe(props, currentInd.id);
-      document.getElementById('activeIndRel').textContent = activeStatus === 'missing' ? missingNote(currentInd) : activeUnreliable ? SUPPRESSED_NOTE : '';
+      document.getElementById('activeIndRel').textContent = activeStatus === 'missing' ? missingNote(currentInd) : activeUnreliable ? unreliableNote(currentInd) : '';
       document.getElementById('activeIndRel').classList.toggle('hidden', !activeUnreliable);
       document.getElementById('activeIndCount').textContent = activeUnreliable ? '' : countText(props, currentInd);
       document.getElementById('activeIndBench').innerHTML = benchmarkHTML(props, currentInd.id);
@@ -965,6 +974,11 @@
         const defLabel = document.createElement('strong');
         defLabel.textContent = 'Definition: ';
         defEl.append(defLabel, currentInd.definition);
+      }
+      if (currentInd.note) { // Optional "note" in indicators.json
+        const noteLabel = document.createElement('strong');
+        noteLabel.textContent = 'Note: ';
+        defEl.append(document.createElement('br'), noteLabel, currentInd.note);
       }
 
       const geoNoun = { counties: 'County', house: 'District', senate: 'District', schools: 'School District' }[currentGeo] || '';
@@ -1029,7 +1043,7 @@
       document.getElementById('allIndicatorsList').innerHTML = availableIndicators().map(ind => {
         const status = reliability(props, ind.id).status;
         const value = status !== 'reliable'
-          ? `<span class="text-xs font-semibold text-slate-600">${esc(status === 'missing' ? missingNote(ind) : SUPPRESSED_NOTE)}</span>`
+          ? `<span class="text-xs font-semibold text-slate-600">${esc(status === 'missing' ? missingNote(ind) : unreliableNote(ind))}</span>`
           : `<span class="font-bold text-slate-900">${fmtPct(props[ind.id])}</span>
              <span class="text-xs text-slate-600 ml-0.5">${fmtMoe(props, ind.id)}</span>`;
         return `
