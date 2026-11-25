@@ -25,8 +25,8 @@ The dashboard uses a **config-driven architecture**: - **Data Pipeline (`/data-p
 - **Race/ethnicity:** Groups overlap. Race groups include Hispanic children of that race; White is non-Hispanic; Hispanic is any race.
 - **Reliability:** All MOEs are 90%. Estimates with a CV above 40% are hidden and shown in gray, as are missing values.
 - **Comparisons:** ▲/▼ mean significantly higher/lower than Texas at 90% confidence (\|A − B\| \> √(MOE_A² + MOE_B²)); otherwise ≈.
-- **Non-ACS sources:** No MOEs, so no reliability flags or significance tests (▲/▼ show direction only). Suppressed or masked values are blank. U.S. values come from Feeding America, NCES EDFacts (2022-23), and NCHS final births data (2023–2024).
-- **Pre-K:** TEA 2025-26 Pre-K enrollment divided by ACS children ages 3–4. School districts exclude charters; counties include them. Rates above 100% are blanked. No U.S. value.
+- **Non-ACS sources:** No MOEs, so no reliability flags or significance tests (▲/▼ show direction only). Suppressed or masked values are blank. Birth data are from DSHS for Texas and counties; DSHS has no U.S. data, so U.S. birth values are from NCHS (2023–2024). Other U.S. values are from Feeding America and NCES (graduation 2022-23, Pre-K 2023).
+- **Pre-K:** TEA 2025-26 Pre-K enrollment divided by ACS children ages 3–4. School districts exclude charters; counties include them. Rates above 100% are blanked.
 
 ------------------------------------------------------------------------
 
