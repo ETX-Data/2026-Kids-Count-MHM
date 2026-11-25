@@ -91,7 +91,11 @@ extra_cells <- list(
   idle_16to19  = sprintf("B14005_%03d", c(10, 11, 14, 15, 24, 25, 28, 29)), # Teens not enrolled + unemployed/not in LF
   teens_16to19 = "B14005_001",                                          # Teens 16-19
   imm_fam_u18  = sprintf("B05009_%03d", c(7, 10, 17, 25, 28, 35)),      # Own kids w/ at least 1 foreign-born parent
-  own_kids_nat = "B05009_001"                                           # Own kids in families (B05009 universe)
+  own_kids_nat = "B05009_001",                                          # Own kids in families (B05009 universe)
+  grand_u18    = "B09018_006",                                          # Kids who are the householder's grandchild
+  kids_hh_rel  = "B09018_001",                                          # Kids in households (B09018 universe)
+  rent_hh_kids = "B25012_011",                                          # Renter HHs w/ related kids
+  hh_kids_ten  = c("B25012_003", "B25012_011")                          # Owner + renter HHs w/ related kids
 )
 # Rate id -> c(numerator, denominator) from extra_cells
 extra_rates <- list(
@@ -99,7 +103,9 @@ extra_rates <- list(
   pct_pov200      = c("pov200_u18", "pov_univ_b"),
   pct_nolf_par    = c("nolf_par_u18", "own_kids_lf"),
   pct_idle_teens  = c("idle_16to19", "teens_16to19"),
-  pct_imm_fam     = c("imm_fam_u18", "own_kids_nat")
+  pct_imm_fam     = c("imm_fam_u18", "own_kids_nat"),
+  pct_grand       = c("grand_u18", "kids_hh_rel"),
+  pct_rent_hh     = c("rent_hh_kids", "hh_kids_ten")
 )
 
 get_extra_indicators <- function(geography, year, state = "TX") {
@@ -146,9 +152,8 @@ pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry =
       dis_univ_u18  = "DP02_0073",    # Disability universe (not C18130, which is poverty-limited)
       pov_u18       = "S1701_C02_002", # Children below 100% FPL
       pov_univ_u18  = "S1701_C01_002", # Poverty universe
-      occ_u18       = "S0901_C01_035", # Kids in occupied housing (tenure universe)
-      ownocc_pct    = "S0901_C01_036", # % of kids in owner-occupied homes
-      rent_pct      = "S0901_C01_037", # % of kids in rented homes
+      mcaid_pct     = "S2704_C03_007", # % of kids under 19 w/ Medicaid/means-tested coverage
+      mcaid_u19     = "S2704_C02_007", # Kids under 19 w/ Medicaid/means-tested coverage
       fb_boys       = "B05003_005",   # Foreign-born boys
       fb_girls      = "B05003_016",   # Foreign-born girls
       nohcov_u19    = "S2701_C04_011", # Under 19, uninsured
@@ -190,13 +195,7 @@ pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry =
       dis_univ_u18 = dis_univ_u18E,
       pov_u18      = pov_u18E,
       pov_univ_u18 = pov_univ_u18E,
-      # Counts from S0901 %s
-      ownocc_u18   = round(ownocc_pctE / 100 * occ_u18E),
-      rent_u18     = round(rent_pctE / 100 * occ_u18E),
-      pct_ownocc   = ownocc_pctE,
-      pct_ownocc_moe = pub_moe(ownocc_pctE, ownocc_pctM), # Not displayed yet
-      pct_rent     = rent_pctE,
-      pct_rent_moe = pub_moe(rent_pctE, rent_pctM),       # Not displayed yet
+      mcaid_u19    = mcaid_u19E,
       fb_u18       = fb_boysE + fb_girlsE,
       nohcov_u19   = nohcov_u19E,
       total_u19    = total_u19E,
@@ -218,6 +217,8 @@ pull_indicators <- function(geo_code, year = acs5_year, state = "TX", geometry =
       pct_nohcov_moe     = pub_moe(unins_pctE, unins_pctM),
       pct_dis            = dis_pctE,
       pct_dis_moe        = pub_moe(dis_pctE, dis_pctM),
+      pct_mcaid          = mcaid_pctE,
+      pct_mcaid_moe      = pub_moe(mcaid_pctE, mcaid_pctM),
       # Calculated MOEs for the rest
       pct_snap_hh_moe    = pct_moe(snap_hh_kidsE, snap_hh_kidsE + nosnap_hh_kidsE, snap_hh_kidsM,
                                    moe_add(list(snap_hh_kidsE, nosnap_hh_kidsE), list(snap_hh_kidsM, nosnap_hh_kidsM))),

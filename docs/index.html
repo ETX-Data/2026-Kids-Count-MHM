@@ -423,7 +423,7 @@
 
     // ---- Home (full Texas view) and Reset (start over) map buttons ----
     const HOME_VIEW = { center: [-99.3, 31.2], zoom: 5.3 };
-    const DEFAULT_GEO = 'counties', DEFAULT_IND = 'pct_pov';
+    const DEFAULT_GEO = 'counties', DEFAULT_IND = 'pct_u18';
     const ICON_HOME = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>';
     const ICON_RESET = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/></svg>';
     class HomeResetControl {
@@ -489,7 +489,7 @@
       if (start.geo) currentGeo = start.geo;
       document.getElementById('geoSelect').value = currentGeo;
       currentInd = availableIndicators().find(i => matchesLink(i, start.ind))
-        || indicators.find(i => i.id === 'pct_pov') || indicators[0];
+        || indicators.find(i => i.id === DEFAULT_IND) || indicators[0];
 
       const select = document.getElementById('indicatorSelect');
       populateIndicatorSelect();
@@ -611,16 +611,19 @@
       if (!currentInd || !available.includes(currentInd)) currentInd = available[0];
 
       select.innerHTML = '';
-      const categories = [...new Set(available.map(i => i.category))];
+      const makeOpt = ind => {
+        const opt = document.createElement('option');
+        opt.value = ind.id;
+        opt.textContent = ind.label;
+        return opt;
+      };
+      // No category -> listed above the groups
+      available.filter(i => !i.category).forEach(ind => select.appendChild(makeOpt(ind)));
+      const categories = [...new Set(available.filter(i => i.category).map(i => i.category))];
       categories.forEach(cat => {
         const group = document.createElement('optgroup');
         group.label = cat;
-        available.filter(i => i.category === cat).forEach(ind => {
-          const opt = document.createElement('option');
-          opt.value = ind.id;
-          opt.textContent = ind.label;
-          group.appendChild(opt);
-        });
+        available.filter(i => i.category === cat).forEach(ind => group.appendChild(makeOpt(ind)));
         select.appendChild(group);
       });
       if (currentInd) select.value = currentInd.id;
@@ -888,7 +891,6 @@
         if (ind?.denom_id) cols.push({ head: `${label} (${ind.denom_label || 'denominator'})`, get: p => p[ind.denom_id] });
         cols.push({ head: `${label} reliability`, get: p => relLabel(p, id, ind) });
       };
-      pctCols('Children under 18, share of total population', 'pct_u18');
       availableIndicators().forEach(ind => pctCols(ind.label, ind.id, ind.count_id, ind));
       RACE_ROWS.forEach(r => pctCols(`${r.label}, share of children`, r.id));
       AGE_ROWS.filter(a => a.id !== 'pct_u5').forEach(a => pctCols(`${a.label}, share of children`, a.id));

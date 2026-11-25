@@ -82,6 +82,20 @@ pnc <- bind_rows(
 )
 write_csv(pnc, "data-prep/clean_data/dshs_late_prenatal_counties.csv", na = "")
 
+# DSHS low birthweight, 2023 (-1 = suppressed). US: NCHS Births: Final Data for 2023
+lbw_raw <- read_excel(list.files(raw, "dshs_birthweight", full.names = TRUE)[1], col_types = "text") %>%
+  fill(Area, Variable) %>%
+  transmute(key = key(Area), cat = Category, n = to_num(.data[[names(.)[6]]])) %>%
+  filter(cat %in% c("All", "Low or Very Low Birthweight")) %>%
+  pivot_wider(names_from = cat, values_from = n) %>%
+  transmute(key, births_n = All, lbw_n = `Low or Very Low Birthweight`, pct_lbw = round(lbw_n / births_n * 100, 1))
+lbw <- bind_rows(
+  tibble(GEOID = "1", NAME = "United States", pct_lbw = 8.6),
+  lbw_raw %>% filter(key == "STATEWIDE") %>% transmute(GEOID = "48", NAME = "Texas", births_n, lbw_n, pct_lbw),
+  lbw_raw %>% filter(key %in% tx_counties$key) %>% join_counties()
+)
+write_csv(lbw, "data-prep/clean_data/dshs_low_birthweight_counties.csv", na = "")
+
 # TDC 2024 projections (mid scenario), latest yr
 tdc_file <- unzip(file.path(raw, "2024_Full_Pop_Projections_Mid (1).zip"), "2024_state_county_asre_indage_mid.csv",
                   exdir = tempdir())
